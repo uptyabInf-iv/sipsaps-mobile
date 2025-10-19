@@ -5,10 +5,13 @@
 import { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux'; // Para Redux global (opcional).
 
-export const useManejoCarga = (esGlobal = false) => { // Prop: true para carga app-wide.
+export const useManejoCarga = (esGlobal = false) => {
+  // Prop: true para carga app-wide.
   const [estaCargandoLocal, setEstaCargandoLocal] = useState(false);
   const dispatch = useDispatch();
-  const estaCargandoGlobal = useSelector((state) => state.carga?.estaCargando || false); // Asume slice 'carga' en Redux.
+  const estaCargandoGlobal = useSelector(
+    (state) => state.carga?.estaCargando || false
+  ); // Asume slice 'carga' en Redux.
 
   const mostrarCarga = () => {
     if (esGlobal) {
@@ -32,12 +35,14 @@ export const useManejoCarga = (esGlobal = false) => { // Prop: true para carga a
   const ejecutarConCarga = async (funcionApi) => {
     mostrarCarga();
     try {
-      const resultado = await funcionApi(); // Ej.: llamada a utils/api.js
+      const resultado = await funcionApi(); // Llama API.
       return resultado;
+    } catch (error) {
+      console.error('Error en carga:', error); // Log específico.
+      throw error; // Propaga para handleError en caller.
     } finally {
-      ocultarCarga(); // Siempre oculta, incluso en error.
+      ocultarCarga(); // Siempre oculta loader, incluso error.
     }
   };
-
   return { estaCargando, mostrarCarga, ocultarCarga, ejecutarConCarga };
 };

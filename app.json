@@ -24,6 +24,10 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+
+    "extra": {
+      "apiUrl": "https://sipsaps-mobile-backend.onrender.com"
     }
   }
 }

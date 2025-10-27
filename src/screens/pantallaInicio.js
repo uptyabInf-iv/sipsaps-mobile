@@ -1,14 +1,20 @@
-// src/screens/pantallaInicio.js
 // Pantalla principal de bienvenida y login: Flujo secuencial minimalista para SIPSAPS.
 // Vista 1: Bienvenida profesional con checkbox. Vista 2: Login elegante como catálogo con inputs activos.
-// Optimizado para futuro: Integración API y persistencia. Colores indigo dinámicos.
+// Optimizado para futuro: Integración API y persistencia. Colores indigo dinámicos. Case-insensitive login.
 
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Switch, Alert, Image, TextInput } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Switch,
+  Alert,
+  Image,
+  TextInput,
+} from 'react-native';
 import { FontAwesome } from '@expo/vector-icons'; // Iconos para inputs y botón.
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -18,28 +24,49 @@ import Animated, {
 import AsyncStorage from '@react-native-async-storage/async-storage'; // Para persistencia futura.
 import BotonPrincipal from '../components/botonPrincipal';
 import IndicadorCarga from '../components/indicadorCarga';
+import ModalGeneral from '../components/modalGeneral'; // Modal para backend errors.
 import { useTemasPersonalizado } from '../hooks/useTemasPersonalizado';
 import { useManejoCarga } from '../hooks/useManejoCarga';
+import api from '../utils/api'; // API conexión.
+import { useDispatch } from 'react-redux';
+import { setUser } from '../redux/slices/userSlice'; // Redux user.
+import { validarLogin } from '../utils/validator'; // Validación dinámica.
 
 export default function PantallaInicio() {
+  const dispatch = useDispatch(); // Para Redux.
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
-  const { colores, fuentes, espaciados, sombras } = useTemasPersonalizado();
-  const { estaCargando, ejecutarConCarga } = useManejoCarga(false); // Local para login.
 
-  // Estados: Vista actual, checkbox no mostrar bienvenida.
+  const tema = useTemasPersonalizado() || {};
+  const {
+    colores = {}, // Usar un objeto vacío como fallback para 'colores'
+    fuentes = {}, // Usar un objeto vacío como fallback para 'fuentes'
+    espaciados = {},
+    sombras = {},
+  } = tema;
+
+  const { estaCargando, ejecutarConCarga } = useManejoCarga(false);
+
+  // Estados generales: Vista actual, checkbox no mostrar bienvenida.
   const [vistaActual, setVistaActual] = useState('bienvenida'); // 'bienvenida' o 'login'.
   const [noMostrarBienvenida, setNoMostrarBienvenida] = useState(false);
 
   // Estados para login (activos para escribir).
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(''); // UsernameOrEmail.
   const [password, setPassword] = useState('');
 
-  // Animación fade: Shared values específicas por vista (fix para blank screen).
+  // Estados para validación dinámica.
+  const [errorsInput, setErrorsInput] = useState({}); // { email: 'msg', password: 'msg' }.
+
+  // Estados para modal backend errors.
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalType, setModalType] = useState('error');
+  const [modalMessage, setModalMessage] = useState('');
+
+  // Animación fade: Shared values específicas por vista.
   const opacidadBienvenida = useSharedValue(1);
   const opacidadLogin = useSharedValue(0);
 
-  // Cargar preferencia checkbox al montar (futuro persistente).
+  // Cargar preferencia checkbox al montar (persistente).
   useEffect(() => {
     const cargarPreferencia = async () => {
       try {
@@ -47,7 +74,7 @@ export default function PantallaInicio() {
         if (valor === 'true') {
           setNoMostrarBienvenida(true);
           setVistaActual('login');
-          opacidadBienvenida.value = 0; // Oculta bienvenida si salta directo.
+          opacidadBienvenida.value = 0;
           opacidadLogin.value = 1;
         }
       } catch (error) {
@@ -57,10 +84,28 @@ export default function PantallaInicio() {
     cargarPreferencia();
   }, []);
 
+  // Validación dinámica por campo (onBlur/onChange).
+  const validarInput = (campo, value) => {
+    const errors = validarLogin(
+      campo === 'email' ? value : email,
+      campo === 'password' ? value : password
+    );
+    setErrorsInput(errors);
+  };
+
+  const onBlurEmail = () => validarInput('email', email);
+  const onBlurPassword = () => validarInput('password', password);
+
   const manejarContinuar = async () => {
-    // Fade out bienvenida, fade in login (suave, 400ms).
-    opacidadBienvenida.value = withTiming(0, { duration: 400, easing: Easing.out(Easing.ease) });
-    opacidadLogin.value = withTiming(1, { duration: 400, easing: Easing.out(Easing.ease) });
+    // Fade out bienvenida, fade in login.
+    opacidadBienvenida.value = withTiming(0, {
+      duration: 400,
+      easing: Easing.out(Easing.ease),
+    });
+    opacidadLogin.value = withTiming(1, {
+      duration: 400,
+      easing: Easing.out(Easing.ease),
+    });
     setVistaActual('login');
 
     // Guardar preferencia si checkbox marcado.
@@ -74,24 +119,49 @@ export default function PantallaInicio() {
   };
 
   const manejarLogin = async () => {
-    if (!email || !password) {
-      Alert.alert('Error', 'Por favor, ingresa nombre de usuario/correo y contraseña.');
+    // Validación global antes de API.
+    const errors = validarLogin(email, password);
+    if (Object.keys(errors).length > 0) {
+      setErrorsInput(errors); // Muestra spans.
       return;
     }
-    await ejecutarConCarga(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 2000)); // Simula API.
-      // Futuro: await api.post('/login', { email, password });
-    });
-    Alert.alert('Éxito', 'Sesión iniciada. Bienvenido a SIPSAPS.', [
-      { text: 'OK', onPress: () => console.log('Navegar a Dashboard (futuro)') },
-    ]);
+
+    // Lowercase para case-insensitive (username/email).
+    const usernameOrEmailLower = email.toLowerCase().trim(); // Trim para espacios.
+
+    try {
+      await ejecutarConCarga(async () => {
+        const result = await api.post('/auth/login', {
+          usernameOrEmail: usernameOrEmailLower, // Envía lower para backend ILIKE.
+          password,
+        });
+        // Guarda en Redux y AsyncStorage.
+        dispatch(setUser(result)); // AppNavigator cambiará a MainApp al observar isAuthenticated=true
+        await AsyncStorage.setItem('jwt', result.token);
+        await AsyncStorage.setItem('user', JSON.stringify(result.user));
+        // Corrección recomendada: no navegar manualmente; AppNavigator conmuta automáticamente.
+      });
+    } catch (error) {
+      // Backend errors en modal (e.g., 401 "Credenciales incorrectas").
+      setModalType('error');
+      setModalMessage(
+        error.message.includes('401')
+          ? 'Credenciales incorrectas. Verifica usuario/contraseña.'
+          : 'Error al iniciar sesión. Intenta de nuevo.'
+      );
+      setModalVisible(true);
+    }
   };
 
   // Estilos animados específicos.
-  const estiloBienvenida = useAnimatedStyle(() => ({ opacity: opacidadBienvenida.value }));
-  const estiloLogin = useAnimatedStyle(() => ({ opacity: opacidadLogin.value }));
+  const estiloBienvenida = useAnimatedStyle(() => ({
+    opacity: opacidadBienvenida.value,
+  }));
+  const estiloLogin = useAnimatedStyle(() => ({
+    opacity: opacidadLogin.value,
+  }));
 
-  // Estilos dinámicos: Dentro del componente para acceso a fuentes/colores.
+  // Estilos dinámicos: Dentro del componente para acceso a fuentes/colores (scope seguro).
   const estilos = StyleSheet.create({
     contenedor: {
       flex: 1,
@@ -158,7 +228,10 @@ export default function PantallaInicio() {
       backgroundColor: colores.fondo, // Fondo claro para input.
       borderRadius: espaciados.pequeno,
       borderWidth: 1.5, // Más visible: Border más grueso.
-      borderColor: colores.principal + '20', // Indigo sutil para elegancia.
+      borderColor:
+        errorsInput.email || errorsInput.password
+          ? colores.error
+          : colores.principal + '20', // Rojo si error.
       paddingHorizontal: espaciados.medio,
       paddingVertical: espaciados.medio, // Más padding vertical para visibilidad.
     },
@@ -176,6 +249,13 @@ export default function PantallaInicio() {
       fontSize: fuentes.tamanos.pequeno,
       marginBottom: 5,
       color: colores.textoSecundario,
+    },
+    errorMensaje: {
+      // Span para error dinámico.
+      fontSize: fuentes.tamanos.pequeno - 2,
+      color: colores.error,
+      marginTop: 5,
+      textAlign: 'left',
     },
     link: {
       fontSize: fuentes.tamanos.pequeno,
@@ -301,17 +381,30 @@ export default function PantallaInicio() {
 
           {/* Formulario como "catálogo" (tarjeta con sombra, iconos en inputs). */}
           <View style={estilos.formulario}>
-            {/* Input Email con icono. */}
+            {/* Input UsernameOrEmail con icono. */}
             <View style={estilos.campo}>
               <Text style={[estilos.label, { color: colores.textoSecundario }]}>
                 Nombre de Usuario o Correo Electrónico
               </Text>
-              <View style={estilos.inputContenedor}>
-                <FontAwesome name="envelope" size={18} style={estilos.iconoInput} />
+              <View
+                style={[
+                  estilos.inputContenedor,
+                  {
+                    borderColor: errorsInput.email
+                      ? colores.error
+                      : colores.principal + '20',
+                  }, // Rojo si error.
+                ]}
+              >
+                <FontAwesome
+                  name="envelope"
+                  size={18}
+                  style={estilos.iconoInput}
+                />
                 <TextInput
                   style={estilos.input}
                   placeholder="usuario@ejemplo.com"
-                  placeholderTextColor={colores.textoSecundario + '60'} // Más opaco para visibilidad.
+                  placeholderTextColor={colores.textoSecundario + '60'}
                   value={email}
                   onChangeText={setEmail}
                   keyboardType="email-address"
@@ -321,20 +414,39 @@ export default function PantallaInicio() {
                   blurOnSubmit={false}
                   accessible={true}
                   accessibilityLabel="Ingresa tu nombre de usuario o email"
+                  onBlur={onBlurEmail} // Validación dinámica.
                 />
               </View>
+              {errorsInput.email && (
+                <Text
+                  style={estilos.errorMensaje}
+                  accessible={true}
+                  accessibilityLabel="Error en email"
+                >
+                  {errorsInput.email}
+                </Text>
+              )}
             </View>
             {/* Input Password con icono. */}
             <View style={estilos.campo}>
               <Text style={[estilos.label, { color: colores.textoSecundario }]}>
                 Contraseña
               </Text>
-              <View style={estilos.inputContenedor}>
+              <View
+                style={[
+                  estilos.inputContenedor,
+                  {
+                    borderColor: errorsInput.password
+                      ? colores.error
+                      : colores.principal + '20',
+                  }, // Rojo si error.
+                ]}
+              >
                 <FontAwesome name="lock" size={18} style={estilos.iconoInput} />
                 <TextInput
                   style={estilos.input}
                   placeholder="********"
-                  placeholderTextColor={colores.textoSecundario + '60'} // Más opaco para visibilidad.
+                  placeholderTextColor={colores.textoSecundario + '60'}
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry={true}
@@ -343,8 +455,18 @@ export default function PantallaInicio() {
                   onSubmitEditing={manejarLogin} // Submit al presionar Enter.
                   accessible={true}
                   accessibilityLabel="Ingresa tu contraseña"
+                  onBlur={onBlurPassword} // Validación dinámica.
                 />
               </View>
+              {errorsInput.password && (
+                <Text
+                  style={estilos.errorMensaje}
+                  accessible={true}
+                  accessibilityLabel="Error en password"
+                >
+                  {errorsInput.password}
+                </Text>
+              )}
             </View>
           </View>
 
@@ -360,6 +482,7 @@ export default function PantallaInicio() {
             ¿Olvidaste tu contraseña?
           </Text>
 
+          {/* Eliminamos el espacio entre el link y el IndicadorCarga */}
           {estaCargando && (
             <IndicadorCarga
               texto="Iniciando sesión..."
@@ -367,6 +490,15 @@ export default function PantallaInicio() {
               tipo="bloques" // Dinámico indigo.
             />
           )}
+
+          {/* Modal para backend errors (e.g., credenciales incorrectas). */}
+          <ModalGeneral
+            visible={modalVisible}
+            type={modalType}
+            title={modalType === 'error' ? 'Error' : 'Éxito'}
+            message={modalMessage}
+            onClose={() => setModalVisible(false)}
+          />
         </Animated.View>
       )}
     </LinearGradient>

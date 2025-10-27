@@ -1,7 +1,6 @@
 // src/hooks/useTemasPersonalizado.js
-// Hook para manejar el tema personalizado: Claro/oscuro según sistema, con validaciones robustas y fallbacks.
+// Hook para manejar el tema personalizado: FORZADO a modo CLARO (ignora el tema del sistema).
 
-import { useColorScheme } from 'react-native';
 import { temaGlobal } from '../utils/temaGlobal';
 
 // Objeto de colores por defecto si temaGlobal falla
@@ -14,12 +13,6 @@ const coloresPorDefecto = {
   textoSecundario: '#64748B', // Gris medio
   error: '#FF3B30',
   exito: '#34C759',
-  oscuro: {
-    fondo: '#0F172A', // Azul indigo oscuro
-    superficie: '#1C1C1E',
-    textoPrincipal: '#FFFFFF',
-    textoSecundario: '#8E8E93',
-  },
 };
 
 // Defaults para otras props
@@ -54,22 +47,28 @@ const sombrasPorDefecto = {
     shadowRadius: 2.22,
     elevation: 3,
   },
+  media: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 6,
+  },
 };
 
 export const useTemasPersonalizado = () => {
-  const esquemaColor = useColorScheme();
-  const esOscuro = esquemaColor === 'dark';
+  // Forzamos tema CLARO: ignoramos useColorScheme / configuración del sistema.
+  // Esto garantiza consistencia visual independientemente del modo oscuro del teléfono.
+  const esOscuro = false;
 
   // Validar que temaGlobal exista y tenga colores, usar por defecto si no
   const coloresBase = temaGlobal?.colores || coloresPorDefecto;
 
-  // Fusionar colores base con oscuro si es necesario
-  const colores = esOscuro
-    ? {
-        ...coloresBase,
-        ...coloresBase.oscuro,
-      }
-    : coloresBase;
+  // No mezclamos con rama 'oscuro' — devolvemos siempre el tema claro definido en temaGlobal
+  const colores = {
+    ...coloresBase,
+    // asegúrate de no incluir keys internas como 'oscuro'
+  };
 
   // Asignar el resto de las propiedades con fallbacks
   const fuentes = temaGlobal?.fuentes || fuentesPorDefecto;
@@ -87,12 +86,13 @@ export const useTemasPersonalizado = () => {
     esOscuro,
   };
 
-  // Depuración mejorada (quita en prod)
-  console.log('Tema cargado:', {
+  // Log de depuración — puedes eliminar en producción
+  // Muestra que forzamos tema claro
+  // eslint-disable-next-line no-console
+  console.log('useTemasPersonalizado: tema forzado a CLARO', {
     principal: colores?.principal,
     esOscuro,
     temaGlobalExists: !!temaGlobal,
-    coloresExists: !!temaGlobal?.colores,
   });
 
   return tema;

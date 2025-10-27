@@ -9,6 +9,9 @@ import {
   RefreshControl,
   Modal,
   ActivityIndicator,
+  StyleSheet,
+  Dimensions,
+  Platform,
 } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -31,13 +34,15 @@ import { existeSolapamiento, esFechaPasada } from './validacionesFechas';
 
 const ORDEN_SECCIONES = ['Pendiente', 'Reprogramada', 'Aprobada', 'Cancelada'];
 
-const toTitle = (s = '') => (s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s);
+const toTitle = (s = '') =>
+  s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s;
 const normalizeKeysLower = (obj) => {
   if (!obj || typeof obj !== 'object') return obj;
   const out = Array.isArray(obj) ? [] : {};
   Object.keys(obj).forEach((k) => {
     const v = obj[k];
-    out[k.toLowerCase()] = v && typeof v === 'object' ? normalizeKeysLower(v) : v;
+    out[k.toLowerCase()] =
+      v && typeof v === 'object' ? normalizeKeysLower(v) : v;
   });
   return out;
 };
@@ -67,10 +72,13 @@ const fechaAtencionFromJust = (just = '') => {
   return null;
 };
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const COMPACT = SCREEN_WIDTH <= 360; // phones muy compactos
+
 export default function GestionCitasMedico() {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
-  const { colores, esOscuro } = useTemasPersonalizado();
+  const { colores } = useTemasPersonalizado();
 
   const [citas, setCitas] = useState([]);
   const [activeTab, setActiveTab] = useState('Activas');
@@ -137,13 +145,14 @@ export default function GestionCitasMedico() {
           correo: p.correo || null,
         },
         motivo: r.motivo || '',
-        fecha: r.fecha || null,     // crudos para redundancia
-        hora: r.hora || null,       // crudos para redundancia
+        fecha: r.fecha || null, // crudos para redundancia
+        hora: r.hora || null, // crudos para redundancia
         fechaSolicitud: fechaSolicitud,
         fechaAtencion: fechaAtencion,
         estatus: est,
         justificacion: r.justificacion || '',
-        fueReprogramada: !!r.fuereprogramada || est.toLowerCase() === 'reprogramada',
+        fueReprogramada:
+          !!r.fuereprogramada || est.toLowerCase() === 'reprogramada',
         modificadoPor: r.modificadopor || r.ultimamodificacion || null,
         fueraHorario: !!r.fuerahorario,
       };
@@ -190,8 +199,12 @@ export default function GestionCitasMedico() {
 
   const seccionesFiltradas = useMemo(() => {
     let base = Array.isArray(citasActivas) ? citasActivas : [];
-    if (filtroEstatus !== 'Todos') base = base.filter((c) => c?.estatus === filtroEstatus);
-    if (pacienteSeleccionado) base = base.filter((c) => c?.paciente?.cedula === pacienteSeleccionado.cedula);
+    if (filtroEstatus !== 'Todos')
+      base = base.filter((c) => c?.estatus === filtroEstatus);
+    if (pacienteSeleccionado)
+      base = base.filter(
+        (c) => c?.paciente?.cedula === pacienteSeleccionado.cedula
+      );
     if (busquedaGeneral) {
       const q = busquedaGeneral.toLowerCase();
       base = base.filter(
@@ -216,19 +229,25 @@ export default function GestionCitasMedico() {
     setModalAccionVisible(true);
   }, []);
 
-  const abrirModalGestion = useCallback((accion) => {
-    setTipoAccion(accion);
-    setJustificacion(
-      citaSeleccionada?.justificacion
-        ? String(citaSeleccionada.justificacion).replace(/\[Horario:.*?\]\s*/, '')
-        : ''
-    );
-    setFechaCita(new Date(citaSeleccionada?.fechaSolicitud || Date.now()));
-    setHoraInicio('09:00');
-    setHoraFin('09:30');
-    setModalAccionVisible(false);
-    setModalGestionVisible(true);
-  }, [citaSeleccionada]);
+  const abrirModalGestion = useCallback(
+    (accion) => {
+      setTipoAccion(accion);
+      setJustificacion(
+        citaSeleccionada?.justificacion
+          ? String(citaSeleccionada.justificacion).replace(
+              /\[Horario:.*?\]\s*/,
+              ''
+            )
+          : ''
+      );
+      setFechaCita(new Date(citaSeleccionada?.fechaSolicitud || Date.now()));
+      setHoraInicio('09:00');
+      setHoraFin('09:30');
+      setModalAccionVisible(false);
+      setModalGestionVisible(true);
+    },
+    [citaSeleccionada]
+  );
 
   const abrirDetalle = useCallback((cita) => {
     setCitaSeleccionada(cita);
@@ -278,7 +297,10 @@ export default function GestionCitasMedico() {
 
         setIsSubmitting(true);
 
-        if (accionFinal === 'aprobar' || accionFinal === 'aprobarReprogramacion') {
+        if (
+          accionFinal === 'aprobar' ||
+          accionFinal === 'aprobarReprogramacion'
+        ) {
           await api.patch(`/citas/${citaSeleccionada.id}/aprobar`);
         } else if (accionFinal === 'reprogramar') {
           const yyyy = fechaCita.getFullYear();
@@ -308,7 +330,17 @@ export default function GestionCitasMedico() {
         setIsSubmitting(false);
       }
     },
-    [tipoAccion, justificacion, fechaCita, horaInicio, horaFin, citas, citaSeleccionada, cerrarTodosModales, fetchCitas]
+    [
+      tipoAccion,
+      justificacion,
+      fechaCita,
+      horaInicio,
+      horaFin,
+      citas,
+      citaSeleccionada,
+      cerrarTodosModales,
+      fetchCitas,
+    ]
   );
 
   const renderItemActivas = useCallback(
@@ -346,30 +378,106 @@ export default function GestionCitasMedico() {
   }, [pacientesUnicos, busquedaPacienteModal]);
 
   return (
-    <View style={{ flex: 1, backgroundColor: esOscuro ? '#000' : '#F2F2F7' }}>
-      <View style={{ paddingTop: insets.top, paddingHorizontal: 20 }}>
-        <Text style={{ fontSize: 32, fontWeight: '700', color: colores.textoPrincipal, marginBottom: 12 }}>
+    <View
+      style={[
+        styles.container,
+        {
+          backgroundColor:
+            colores.fondo || (Platform.OS === 'android' ? '#fff' : '#F2F2F7'),
+        },
+      ]}
+    >
+      <View
+        style={[
+          styles.headerWrap,
+          {
+            paddingTop: insets.top + 8,
+            paddingHorizontal: Math.max(insets.left, 12),
+          },
+        ]}
+      >
+        <Text
+          style={[styles.title, { color: colores.textoPrincipal }]}
+          numberOfLines={1}
+        >
           Panel de Citas
         </Text>
 
-        <View style={{ flexDirection: 'row', backgroundColor: '#E5E5EA', borderRadius: 10, padding: 4, marginBottom: 12 }}>
+        <View style={styles.tabRow}>
           <TouchableOpacity
             onPress={() => setActiveTab('Activas')}
-            style={{ flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center', backgroundColor: activeTab === 'Activas' ? colores.principal : 'transparent' }}
+            style={[
+              styles.tabButton,
+              activeTab === 'Activas'
+                ? { backgroundColor: colores.principal }
+                : null,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Ver citas activas"
           >
-            <Text style={{ fontWeight: '700', color: activeTab === 'Activas' ? '#FFF' : colores.textoSecundario }}>Activas</Text>
+            <Text
+              style={[
+                styles.tabText,
+                {
+                  color:
+                    activeTab === 'Activas' ? '#FFF' : colores.textoSecundario,
+                },
+              ]}
+            >
+              Activas
+            </Text>
           </TouchableOpacity>
+
           <TouchableOpacity
             onPress={() => setActiveTab('Aprobadas')}
-            style={{ flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center', backgroundColor: activeTab === 'Aprobadas' ? colores.principal : 'transparent' }}
+            style={[
+              styles.tabButton,
+              activeTab === 'Aprobadas'
+                ? { backgroundColor: colores.principal }
+                : null,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Ver citas aprobadas"
           >
-            <Text style={{ fontWeight: '700', color: activeTab === 'Aprobadas' ? '#FFF' : colores.textoSecundario }}>Aprobadas</Text>
+            <Text
+              style={[
+                styles.tabText,
+                {
+                  color:
+                    activeTab === 'Aprobadas'
+                      ? '#FFF'
+                      : colores.textoSecundario,
+                },
+              ]}
+            >
+              Aprobadas
+            </Text>
           </TouchableOpacity>
+
           <TouchableOpacity
             onPress={() => setActiveTab('Atendidas')}
-            style={{ flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center', backgroundColor: activeTab === 'Atendidas' ? colores.principal : 'transparent' }}
+            style={[
+              styles.tabButton,
+              activeTab === 'Atendidas'
+                ? { backgroundColor: colores.principal }
+                : null,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Ver citas atendidas"
           >
-            <Text style={{ fontWeight: '700', color: activeTab === 'Atendidas' ? '#FFF' : colores.textoSecundario }}>Atendidas</Text>
+            <Text
+              style={[
+                styles.tabText,
+                {
+                  color:
+                    activeTab === 'Atendidas'
+                      ? '#FFF'
+                      : colores.textoSecundario,
+                },
+              ]}
+            >
+              Atendidas
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -377,74 +485,155 @@ export default function GestionCitasMedico() {
       {activeTab === 'Activas' ? (
         <SectionList
           sections={seccionesFiltradas}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => String(item.id)}
           renderItem={renderItemActivas}
-          renderSectionHeader={({ section }) => <CabeceraSeccion title={section.title} />}
+          renderSectionHeader={({ section }) => (
+            <CabeceraSeccion title={section.title} />
+          )}
           ListHeaderComponent={
-            <View style={{ paddingHorizontal: 20, paddingTop: 10 }}>
-              <GuiaVisualColapsable />
-              <View style={{ flexDirection: 'row', alignItems: 'center', borderRadius: 12, paddingHorizontal: 15, marginBottom: 16, backgroundColor: esOscuro ? '#1C1C1E' : '#FFF' }}>
-                <FontAwesome name="search" size={18} color={colores.textoSecundario} />
+            <View
+              style={[
+                styles.listHeader,
+                { paddingHorizontal: Math.max(insets.left, 12) },
+              ]}
+            >
+              <GuiaVisualColapsable compact={COMPACT} />
+              <View
+                style={[
+                  styles.searchRow,
+                  { backgroundColor: colores.superficie },
+                ]}
+              >
+                <FontAwesome
+                  name="search"
+                  size={16}
+                  color={colores.textoSecundario}
+                />
                 <TextInput
                   placeholder="Buscar por paciente o motivo..."
                   placeholderTextColor={colores.textoSecundario}
-                  style={{ flex: 1, height: 50, marginLeft: 10, color: colores.textoPrincipal }}
+                  style={[
+                    styles.searchInput,
+                    { color: colores.textoPrincipal },
+                  ]}
                   value={busquedaGeneral}
                   onChangeText={setBusquedaGeneral}
+                  returnKeyType="search"
                 />
               </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginBottom: 20 }}>
+
+              <View style={styles.filterRow}>
                 <TouchableOpacity
                   onPress={() => setModalEstatusVisible(true)}
-                  style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 20, borderWidth: 1.5, borderColor: colores.textoSecundario }}
+                  style={[
+                    styles.filterButton,
+                    { borderColor: colores.textoSecundario },
+                  ]}
                 >
-                  <FontAwesome name="filter" size={14} color={colores.textoSecundario} />
-                  <Text style={{ marginLeft: 8, fontWeight: '700', color: colores.textoSecundario }}>{filtroEstatus}</Text>
+                  <FontAwesome
+                    name="filter"
+                    size={14}
+                    color={colores.textoSecundario}
+                  />
+                  <Text
+                    style={[
+                      styles.filterText,
+                      { color: colores.textoSecundario },
+                    ]}
+                  >
+                    {filtroEstatus}
+                  </Text>
                 </TouchableOpacity>
+
                 <TouchableOpacity
                   onPress={() => setModalPacienteVisible(true)}
-                  style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 20, borderWidth: 1.5, borderColor: colores.principal }}
+                  style={[
+                    styles.filterButton,
+                    { borderColor: colores.principal },
+                  ]}
                 >
-                  <FontAwesome name="user" size={14} color={colores.principal} />
-                  <Text style={{ marginLeft: 8, fontWeight: '700', color: colores.principal }}>
-                    {pacienteSeleccionado ? pacienteSeleccionado.nombre.split(' ')[0] : 'Paciente'}
+                  <FontAwesome
+                    name="user"
+                    size={14}
+                    color={colores.principal}
+                  />
+                  <Text
+                    style={[styles.filterText, { color: colores.principal }]}
+                  >
+                    {pacienteSeleccionado
+                      ? pacienteSeleccionado.nombre.split(' ')[0]
+                      : 'Paciente'}
                   </Text>
                 </TouchableOpacity>
 
                 {pacienteSeleccionado ? (
                   <TouchableOpacity
                     onPress={() => setPacienteSeleccionado(null)}
-                    style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 20, borderWidth: 1.5, borderColor: '#dc3545' }}
+                    style={[styles.filterButtonDanger]}
                   >
                     <FontAwesome name="undo" size={14} color="#dc3545" />
-                    <Text style={{ marginLeft: 8, fontWeight: '700', color: '#dc3545' }}>Mostrar todos</Text>
+                    <Text style={[styles.filterTextDanger]}>Mostrar todos</Text>
                   </TouchableOpacity>
                 ) : null}
               </View>
             </View>
           }
-          contentContainerStyle={{ paddingBottom: 50 }}
-          ListEmptyComponent={<Text style={{ textAlign: 'center', marginTop: 50, color: colores.textoSecundario }}>No se encontraron citas activas.</Text>}
+          contentContainerStyle={{
+            paddingBottom: Math.max(insets.bottom + 80, 120),
+          }}
+          ListEmptyComponent={
+            <Text
+              style={[styles.emptyText, { color: colores.textoSecundario }]}
+            >
+              No se encontraron citas activas.
+            </Text>
+          }
           stickySectionHeadersEnabled={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
         />
       ) : activeTab === 'Aprobadas' ? (
         <FlatList
           data={citasAprobadas}
-          keyExtractor={(i) => i.id}
+          keyExtractor={(i) => String(i.id)}
           renderItem={renderItemAprobadas}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20 }}
-          ListEmptyComponent={<Text style={{ textAlign: 'center', marginTop: 50, color: colores.textoSecundario }}>No hay citas aprobadas.</Text>}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          contentContainerStyle={{
+            paddingHorizontal: Math.max(insets.left, 12),
+            paddingTop: 12,
+            paddingBottom: Math.max(insets.bottom + 80, 120),
+          }}
+          ListEmptyComponent={
+            <Text
+              style={[styles.emptyText, { color: colores.textoSecundario }]}
+            >
+              No hay citas aprobadas.
+            </Text>
+          }
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
         />
       ) : (
         <FlatList
           data={citasAtendidas}
-          keyExtractor={(i) => i.id}
+          keyExtractor={(i) => String(i.id)}
           renderItem={renderItemAtendidas}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20 }}
-          ListEmptyComponent={<Text style={{ textAlign: 'center', marginTop: 50, color: colores.textoSecundario }}>No hay citas en el historial.</Text>}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          contentContainerStyle={{
+            paddingHorizontal: Math.max(insets.left, 12),
+            paddingTop: 12,
+            paddingBottom: Math.max(insets.bottom + 80, 120),
+          }}
+          ListEmptyComponent={
+            <Text
+              style={[styles.emptyText, { color: colores.textoSecundario }]}
+            >
+              No hay citas en el historial.
+            </Text>
+          }
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
         />
       )}
 
@@ -513,25 +702,46 @@ export default function GestionCitasMedico() {
         visible={modalHorarioVisible.visible}
         tipo={modalHorarioVisible.tipo}
         horarios={[
-          '07:00','07:30','08:00','08:30','09:00','09:30',
-          '10:00','10:30','11:00','11:30','12:00','12:30',
-          '13:00','13:30','14:00','14:30','15:00','15:30',
-          '16:00','16:30','17:00','17:30','18:00',
+          '07:00',
+          '07:30',
+          '08:00',
+          '08:30',
+          '09:00',
+          '09:30',
+          '10:00',
+          '10:30',
+          '11:00',
+          '11:30',
+          '12:00',
+          '12:30',
+          '13:00',
+          '13:30',
+          '14:00',
+          '14:30',
+          '15:00',
+          '15:30',
+          '16:00',
+          '16:30',
+          '17:00',
+          '17:30',
+          '18:00',
         ]}
         onSelect={(h) => {
           if (modalHorarioVisible.tipo === 'inicio') setHoraInicio(h);
           else setHoraFin(h);
           setModalHorarioVisible({ visible: false, tipo: 'inicio' });
         }}
-        onClose={() => setModalHorarioVisible({ visible: false, tipo: 'inicio' })}
+        onClose={() =>
+          setModalHorarioVisible({ visible: false, tipo: 'inicio' })
+        }
       />
 
       {/* Overlay de carga global */}
       <Modal visible={loading || isSubmitting} transparent animationType="fade">
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.25)', alignItems: 'center', justifyContent: 'center' }}>
-          <View style={{ backgroundColor: '#000', paddingVertical: 14, paddingHorizontal: 20, borderRadius: 10, opacity: 0.85, flexDirection: 'row', alignItems: 'center' }}>
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingBox}>
             <ActivityIndicator color="#fff" />
-            <Text style={{ color: '#fff', marginLeft: 10, fontWeight: '700' }}>
+            <Text style={styles.loadingText}>
               {isSubmitting ? 'Procesando...' : 'Cargando...'}
             </Text>
           </View>
@@ -540,3 +750,120 @@ export default function GestionCitasMedico() {
     </View>
   );
 }
+
+const basePadding = COMPACT ? 10 : 16;
+const smallFont = COMPACT ? 13 : 15;
+const titleFont = COMPACT ? 24 : 32;
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  headerWrap: {
+    paddingBottom: 8,
+    backgroundColor: 'transparent',
+  },
+  title: {
+    fontSize: titleFont,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  tabRow: {
+    flexDirection: 'row',
+    backgroundColor: '#E5E5EA',
+    borderRadius: 10,
+    padding: 4,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: COMPACT ? 8 : 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  tabText: {
+    fontWeight: '700',
+    fontSize: smallFont,
+  },
+  listHeader: {
+    paddingTop: 6,
+    paddingBottom: 6,
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: COMPACT ? 8 : 10,
+    marginTop: 8,
+    marginBottom: 10,
+    elevation: 0,
+  },
+  searchInput: {
+    flex: 1,
+    height: COMPACT ? 40 : 48,
+    marginLeft: 10,
+    fontSize: COMPACT ? 13 : 15,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    gap: 8,
+    marginBottom: 8,
+  },
+  filterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: COMPACT ? 6 : 8,
+    paddingHorizontal: 10,
+    borderRadius: 18,
+    borderWidth: 1.2,
+    marginRight: 8,
+  },
+  filterText: {
+    marginLeft: 8,
+    fontWeight: '700',
+    fontSize: COMPACT ? 12 : 13,
+  },
+  filterButtonDanger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: COMPACT ? 6 : 8,
+    paddingHorizontal: 10,
+    borderRadius: 18,
+    borderWidth: 1.2,
+    borderColor: '#dc3545',
+    marginRight: 8,
+  },
+  filterTextDanger: {
+    marginLeft: 8,
+    fontWeight: '700',
+    color: '#dc3545',
+    fontSize: COMPACT ? 12 : 13,
+  },
+  emptyText: {
+    textAlign: 'center',
+    marginTop: 50,
+    fontSize: COMPACT ? 13 : 15,
+  },
+  loadingOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: basePadding,
+  },
+  loadingBox: {
+    backgroundColor: '#000',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    opacity: 0.9,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#fff',
+    marginLeft: 10,
+    fontWeight: '700',
+  },
+});

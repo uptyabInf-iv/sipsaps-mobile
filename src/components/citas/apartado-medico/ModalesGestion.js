@@ -1,13 +1,8 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, Modal, FlatList, TextInput, ScrollView, Pressable, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, Modal, FlatList, TextInput, ScrollView, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
 import { useTemasPersonalizado } from '../../../hooks/useTemasPersonalizado';
 import { ESTATUS_INFO } from './constantesEstatus';
-
-/*
-  CORRECCIÓN MÍNIMA: Se usa Pressable como fondo para que tanto la 'X' como tocar fuera
-  del modal funcionen correctamente sin cambiar tu estructura.
-*/
 
 const ModalOverlay = ({ children, onClose }) => (
   <View style={styles.modalContainer}>
@@ -16,8 +11,9 @@ const ModalOverlay = ({ children, onClose }) => (
   </View>
 );
 
-export function ModalAcciones({ visible, cita, onClose, onAprobar, onReprogramar, onCancelar, onMarcarAtendida }) {
+export function ModalAcciones({ visible, cita, onClose, onAprobar, onReprogramar, onCancelar, onMarcarAtendida, isSubmitting = false }) {
   const { colores } = useTemasPersonalizado();
+  const disabledStyle = { opacity: isSubmitting ? 0.6 : 1 };
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <ModalOverlay onClose={onClose}>
@@ -30,44 +26,71 @@ export function ModalAcciones({ visible, cita, onClose, onAprobar, onReprogramar
           <Text style={{ color: colores.textoSecundario, textAlign: 'center', marginBottom: 16 }}>Paciente: {cita?.paciente?.nombre ?? '—'}</Text>
 
           {cita?.estatus === 'Pendiente' && (
-            <TouchableOpacity onPress={onAprobar} style={{ flexDirection: 'row', alignItems: 'center', padding: 14, borderWidth: 1, borderColor: '#D5ECD8', borderRadius: 10, marginBottom: 10 }}>
+            <TouchableOpacity disabled={isSubmitting} onPress={onAprobar} style={[{ flexDirection: 'row', alignItems: 'center', padding: 14, borderWidth: 1, borderColor: '#D5ECD8', borderRadius: 10, marginBottom: 10 }, disabledStyle]}>
               <FontAwesome name="check-circle" size={20} color="#28a745" />
               <Text style={{ marginLeft: 12, fontWeight: '700', color: colores.textoPrincipal }}>Aprobar Cita</Text>
             </TouchableOpacity>
           )}
 
-          {cita?.estatus === 'Reprogramada' && cita?.modificadoPor === 'Paciente' && (
-            <TouchableOpacity onPress={onAprobar} style={{ flexDirection: 'row', alignItems: 'center', padding: 14, borderWidth: 1, borderColor: '#D5ECD8', borderRadius: 10, marginBottom: 10 }}>
+          {cita?.estatus === 'Reprogramada' && (
+            <TouchableOpacity disabled={isSubmitting} onPress={onAprobar} style={[{ flexDirection: 'row', alignItems: 'center', padding: 14, borderWidth: 1, borderColor: '#D5ECD8', borderRadius: 10, marginBottom: 10 }, disabledStyle]}>
               <FontAwesome name="check-circle" size={20} color="#28a745" />
               <Text style={{ marginLeft: 12, fontWeight: '700', color: colores.textoPrincipal }}>Aprobar Reprogramación</Text>
             </TouchableOpacity>
           )}
 
           {(cita?.estatus === 'Aprobada' || cita?.estatus === 'Reprogramada') && (
-            <TouchableOpacity onPress={onMarcarAtendida} style={{ flexDirection: 'row', alignItems: 'center', padding: 14, borderWidth: 1, borderColor: '#E8E8E8', borderRadius: 10, marginBottom: 10 }}>
+            <TouchableOpacity disabled={isSubmitting} onPress={onMarcarAtendida} style={[{ flexDirection: 'row', alignItems: 'center', padding: 14, borderWidth: 1, borderColor: '#E8E8E8', borderRadius: 10, marginBottom: 10 }, disabledStyle]}>
               <FontAwesome name="history" size={20} color="#6c757d" />
               <Text style={{ marginLeft: 12, fontWeight: '700', color: colores.textoPrincipal }}>Marcar como Atendida</Text>
             </TouchableOpacity>
           )}
 
-          <TouchableOpacity onPress={onReprogramar} style={{ flexDirection: 'row', alignItems: 'center', padding: 14, borderWidth: 1, borderColor: '#D9F0FF', borderRadius: 10, marginBottom: 10 }}>
+          <TouchableOpacity disabled={isSubmitting} onPress={onReprogramar} style={[{ flexDirection: 'row', alignItems: 'center', padding: 14, borderWidth: 1, borderColor: '#D9F0FF', borderRadius: 10, marginBottom: 10 }, disabledStyle]}>
             <FontAwesome name="calendar" size={20} color="#17a2b8" />
             <Text style={{ marginLeft: 12, fontWeight: '700', color: colores.textoPrincipal }}>Reprogramar Cita</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={onCancelar} style={{ flexDirection: 'row', alignItems: 'center', padding: 14, borderWidth: 1, borderColor: '#F8E6E6', borderRadius: 10 }}>
+          <TouchableOpacity disabled={isSubmitting} onPress={onCancelar} style={[{ flexDirection: 'row', alignItems: 'center', padding: 14, borderWidth: 1, borderColor: '#F8E6E6', borderRadius: 10 }, disabledStyle]}>
             <FontAwesome name="times-circle" size={20} color="#dc3545" />
             <Text style={{ marginLeft: 12, fontWeight: '700', color: colores.textoPrincipal }}>Cancelar Cita</Text>
           </TouchableOpacity>
+
+          {isSubmitting ? (
+            <View style={{ marginTop: 14, alignItems: 'center' }}>
+              <ActivityIndicator color={colores.principal} />
+              <Text style={{ marginTop: 6, color: colores.textoSecundario }}>Procesando...</Text>
+            </View>
+          ) : null}
         </View>
       </ModalOverlay>
     </Modal>
   );
 }
 
-export function ModalGestion({ visible, tipoAccion, cita, fechaCita, setFechaCita, horaInicio, setHoraInicio, horaFin, setHoraFin, showDatePicker, setShowDatePicker, justificacion, setJustificacion, onConfirm, onClose }) {
+export function ModalGestion({
+  visible,
+  tipoAccion,
+  cita,
+  fechaCita,
+  setFechaCita,
+  horaInicio,
+  setHoraInicio,
+  horaFin,
+  setHoraFin,
+  showDatePicker,
+  setShowDatePicker,
+  justificacion,
+  setJustificacion,
+  onConfirm,
+  onClose,
+  onOpenHorarioInicio,
+  onOpenHorarioFin,
+  isSubmitting = false,
+}) {
   const { colores } = useTemasPersonalizado();
-  const formatFecha = (d) => d ? d.toLocaleDateString('es-ES', { weekday: 'long', day: '2-digit', month: 'long' }) : '';
+  const formatFecha = (d) => (d && !isNaN(d) ? d.toLocaleDateString('es-ES', { weekday: 'long', day: '2-digit', month: 'long' }) : '');
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <ModalOverlay onClose={onClose}>
@@ -76,7 +99,9 @@ export function ModalGestion({ visible, tipoAccion, cita, fechaCita, setFechaCit
             <FontAwesome name="close" size={22} color={colores.textoSecundario} />
           </TouchableOpacity>
 
-          <Text style={{ fontSize: 20, fontWeight: '700', color: colores.textoPrincipal, textAlign: 'center', marginBottom: 8 }}>{(tipoAccion || '').charAt(0).toUpperCase() + (tipoAccion || '').slice(1)} cita</Text>
+          <Text style={{ fontSize: 20, fontWeight: '700', color: colores.textoPrincipal, textAlign: 'center', marginBottom: 8 }}>
+            {(tipoAccion || '').charAt(0).toUpperCase() + (tipoAccion || '').slice(1)} cita
+          </Text>
           <Text style={{ color: colores.textoSecundario, marginBottom: 12 }}>Paciente: {cita?.paciente?.nombre ?? '—'}</Text>
 
           {tipoAccion === 'reprogramar' && (
@@ -87,23 +112,36 @@ export function ModalGestion({ visible, tipoAccion, cita, fechaCita, setFechaCit
               </TouchableOpacity>
 
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}>
-                <TouchableOpacity onPress={() => {}} style={{ flex: 1, borderWidth: 1, borderRadius: 10, borderColor: '#DDD', padding: 12, marginRight: 6, alignItems: 'center' }}>
+                <TouchableOpacity onPress={onOpenHorarioInicio} style={{ flex: 1, borderWidth: 1, borderRadius: 10, borderColor: '#DDD', padding: 12, marginRight: 6, alignItems: 'center' }}>
                   <Text>Desde: {horaInicio}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => {}} style={{ flex: 1, borderWidth: 1, borderRadius: 10, borderColor: '#DDD', padding: 12, marginLeft: 6, alignItems: 'center' }}>
+                <TouchableOpacity onPress={onOpenHorarioFin} style={{ flex: 1, borderWidth: 1, borderRadius: 10, borderColor: '#DDD', padding: 12, marginLeft: 6, alignItems: 'center' }}>
                   <Text>Hasta: {horaFin}</Text>
                 </TouchableOpacity>
               </View>
             </>
           )}
 
-          <Text style={{ color: colores.textoSecundario, marginBottom: 8 }}>Justificación {tipoAccion === 'cancelar' ? '(obligatoria)' : '(opcional)'}</Text>
+          <Text style={{ color: colores.textoSecundario, marginBottom: 8 }}>
+            Justificación {tipoAccion === 'cancelar' ? '(obligatoria)' : '(opcional)'}
+          </Text>
           <View style={{ borderWidth: 1, borderColor: '#CCC', borderRadius: 10, padding: 12, minHeight: 80, backgroundColor: colores.superficie }}>
-            <TextInput value={justificacion} onChangeText={setJustificacion} multiline placeholder="Escribe la justificación..." placeholderTextColor={colores.textoSecundario} style={{ color: colores.textoPrincipal, minHeight: 40 }} />
+            <TextInput
+              value={justificacion}
+              onChangeText={setJustificacion}
+              multiline
+              placeholder="Escribe la justificación..."
+              placeholderTextColor={colores.textoSecundario}
+              style={{ color: colores.textoPrincipal, minHeight: 40 }}
+            />
           </View>
 
-          <TouchableOpacity onPress={onConfirm} style={{ marginTop: 12, padding: 14, borderRadius: 10, backgroundColor: colores.principal, alignItems: 'center' }}>
-            <Text style={{ color: '#fff', fontWeight: '700' }}>Confirmar</Text>
+          <TouchableOpacity
+            disabled={isSubmitting}
+            onPress={onConfirm}
+            style={{ marginTop: 12, padding: 14, borderRadius: 10, backgroundColor: colores.principal, alignItems: 'center', opacity: isSubmitting ? 0.7 : 1 }}
+          >
+            {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Confirmar</Text>}
           </TouchableOpacity>
         </View>
       </ModalOverlay>
@@ -127,17 +165,21 @@ export function ModalPacientes({ visible, pacientes, onSelect, onClose, busqueda
             <TextInput placeholder="Buscar..." placeholderTextColor={colores.textoSecundario} value={busqueda} onChangeText={setBusqueda} style={{ flex: 1, marginLeft: 8, paddingVertical: 6, color: colores.textoPrincipal }} />
           </View>
 
-          <FlatList data={pacientes} keyExtractor={(i) => i.cedula} renderItem={({ item }) => (
-            <TouchableOpacity onPress={() => onSelect(item)} style={{ padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#EEE', marginBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <View>
-                <Text style={{ fontWeight: '700', color: colores.textoPrincipal }}>{item.nombre}</Text>
-                <Text style={{ color: colores.textoSecundario }}>{item.cedula}</Text>
-              </View>
-              <View style={{ backgroundColor: colores.principal + '20', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 }}>
-                <Text style={{ color: colores.principal, fontWeight: '700' }}>{item.tipoUsuario}</Text>
-              </View>
-            </TouchableOpacity>
-          )} />
+          <FlatList
+            data={pacientes}
+            keyExtractor={(i) => i.cedula}
+            renderItem={({ item }) => (
+              <TouchableOpacity onPress={() => onSelect(item)} style={{ padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#EEE', marginBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <View>
+                  <Text style={{ fontWeight: '700', color: colores.textoPrincipal }}>{item.nombre}</Text>
+                  <Text style={{ color: colores.textoSecundario }}>{item.cedula}</Text>
+                </View>
+                <View style={{ backgroundColor: colores.principal + '20', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 }}>
+                  <Text style={{ color: colores.principal, fontWeight: '700' }}>{item.tipoUsuario}</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+          />
 
           <View style={{ marginTop: 8 }}>
             <TouchableOpacity onPress={() => onSelect(null)} style={{ padding: 12, borderRadius: 10, borderWidth: 1.5, borderColor: colores.principal, alignItems: 'center' }}>
@@ -203,14 +245,7 @@ export function ModalEstatus({ visible, current, onSelect, onClose }) {
           {current !== 'Todos' && (
             <TouchableOpacity
               onPress={() => onSelect('Todos')}
-              style={{
-                padding: 12,
-                borderRadius: 10,
-                borderWidth: 1.5,
-                borderColor: '#EEE',
-                marginTop: 8,
-                alignItems: 'center',
-              }}
+              style={{ padding: 12, borderRadius: 10, borderWidth: 1.5, borderColor: '#EEE', marginTop: 8, alignItems: 'center' }}
             >
               <Text style={{ color: colores.textoSecundario, fontWeight: '700' }}>Mostrar todos</Text>
             </TouchableOpacity>
@@ -223,7 +258,28 @@ export function ModalEstatus({ visible, current, onSelect, onClose }) {
 
 export function ModalDetalle({ visible, cita, onClose }) {
   const { colores } = useTemasPersonalizado();
-  const formatDateTimeAMPM = (iso) => iso ? new Date(iso).toLocaleString('es-ES', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : 'N/A';
+
+  const toDate = (val) => {
+    if (!val) return null;
+    const d = val instanceof Date ? val : new Date(val);
+    return isNaN(d) ? null : d;
+  };
+
+  const formatDateTimeAMPM = (val, fallbackFecha, fallbackHora) => {
+    let d = toDate(val);
+    if (!d && fallbackFecha && fallbackHora) {
+      // fallback extra si el item traía crudos (por redundancia)
+      const fm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(fallbackFecha));
+      const hm = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(String(fallbackHora));
+      if (fm && hm) {
+        d = new Date(parseInt(fm[1], 10), parseInt(fm[2], 10) - 1, parseInt(fm[3], 10), parseInt(hm[1], 10), parseInt(hm[2], 10), hm[3] ? parseInt(hm[3], 10) : 0);
+      }
+    }
+    return d
+      ? d.toLocaleString('es-ES', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
+      : 'N/A';
+  };
+
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: colores.superficie }}>
@@ -254,9 +310,13 @@ export function ModalDetalle({ visible, cita, onClose }) {
               <Text style={{ color: colores.textoSecundario }}>Motivo</Text>
               <Text style={{ fontWeight: '700', color: colores.textoPrincipal }}>{cita.motivo || '—'}</Text>
               <Text style={{ color: colores.textoSecundario, marginTop: 8 }}>Programada el</Text>
-              <Text style={{ fontWeight: '700', color: colores.textoPrincipal }}>{formatDateTimeAMPM(cita.fechaSolicitud)}</Text>
-              <Text style={{ color: colores.textoSecundario, marginTop: 8 }}>Fecha de Atención</Text>
-              <Text style={{ fontWeight: '700', color: colores.textoPrincipal }}>{cita.fechaAtencion ? formatDateTimeAMPM(cita.fechaAtencion) : 'N/A'}</Text>
+              <Text style={{ fontWeight: '700', color: colores.textoPrincipal }}>
+                {formatDateTimeAMPM(cita.fechaSolicitud, cita.fecha, cita.hora)}
+              </Text>
+              {/* <Text style={{ color: colores.textoSecundario, marginTop: 8 }}>Fecha de Atención</Text>
+              <Text style={{ fontWeight: '700', color: colores.textoPrincipal }}>
+                {formatDateTimeAMPM(cita.fechaAtencion)}
+              </Text> */}
             </View>
 
             <View style={{ marginBottom: 18 }}>
@@ -291,11 +351,15 @@ export function ModalHorario({ visible, tipo, horarios, onSelect, onClose }) {
           </TouchableOpacity>
 
           <Text style={{ fontSize: 18, fontWeight: '700', color: colores.textoPrincipal, marginBottom: 12 }}>Seleccionar Hora</Text>
-          <FlatList data={horarios} keyExtractor={(i) => i} renderItem={({ item }) => (
-            <TouchableOpacity onPress={() => onSelect(item)} style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: '#EEE' }}>
-              <Text style={{ color: colores.textoPrincipal }}>{item}</Text>
-            </TouchableOpacity>
-          )} />
+          <FlatList
+            data={horarios}
+            keyExtractor={(i) => i}
+            renderItem={({ item }) => (
+              <TouchableOpacity onPress={() => onSelect(item)} style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: '#EEE' }}>
+                <Text style={{ color: colores.textoPrincipal }}>{item}</Text>
+              </TouchableOpacity>
+            )}
+          />
         </View>
       </ModalOverlay>
     </Modal>

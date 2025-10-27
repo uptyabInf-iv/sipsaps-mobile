@@ -10,13 +10,13 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FontAwesome } from '@expo/vector-icons';
+import { useSelector } from 'react-redux';
 import { useTemasPersonalizado } from '../hooks/useTemasPersonalizado';
 
 // Componente para las tarjetas de opción (reutilizable y elegante)
 const OpcionCitaCard = ({ titulo, descripcion, icono, screenName }) => {
   const navigation = useNavigation();
-  const { colores, espaciados, sombras, fuentes, esOscuro } =
-    useTemasPersonalizado();
+  const { colores, sombras, fuentes, esOscuro } = useTemasPersonalizado();
 
   return (
     <TouchableOpacity
@@ -66,9 +66,23 @@ const OpcionCitaCard = ({ titulo, descripcion, icono, screenName }) => {
 export default function PantallaCitas() {
   const insets = useSafeAreaInsets();
   const { colores, espaciados, fuentes } = useTemasPersonalizado();
-  // Aquí podrías usar tu hook de usuario para verificar el rol
-  // const { user } = useUser();
-  // const esMedico = user?.rol === 'MEDICO';
+
+  // Obtenemos el usuario del store (tolerante a diferentes formatos)
+  const authState = useSelector((state) => state.user);
+  const user = authState?.user || null;
+
+  // rol puede venir como string (e.g., 'MEDICO', 'PRESIDENTE')
+  // y/o tipo_usuario como id numérico según la tabla: 1 PRESIDENTE, 4 MEDICO.
+  const rol = String(user?.rol || user?.tipo_usuario_nombre || user?.tipoUsuarioNombre || '')
+    .trim()
+    .toUpperCase();
+  const tipoId = user?.tipo_usuario ?? user?.tipoUsuario ?? null;
+
+  const esMedicoOPresidente =
+    rol === 'MEDICO' ||
+    rol === 'PRESIDENTE' ||
+    tipoId === 4 || // MEDICO
+    tipoId === 1;   // PRESIDENTE
 
   return (
     <View
@@ -93,26 +107,31 @@ export default function PantallaCitas() {
         </Text>
 
         <View style={{ marginTop: espaciados.extraGrande }}>
-          <OpcionCitaCard
-            titulo="Agendar Nueva Cita"
-            descripcion="Reserva un nuevo espacio con nuestros especialistas."
-            icono="calendar-plus-o"
-            screenName="AgendarCita"
-          />
-          <OpcionCitaCard
-            titulo="Mis Citas Agendadas"
-            descripcion="Consulta el historial y estado de tus citas."
-            icono="history"
-            screenName="HistorialCitas"
-          />
-          {/* --- NUEVA OPCIÓN PARA MÉDICOS (visible para todos por ahora) --- */}
-          <OpcionCitaCard
-            titulo="Gestionar Citas de Pacientes"
-            descripcion="Aprueba, cancela o reprograma las solicitudes."
-            icono="users"
-            screenName="GestionCitasMedico"
-          />
-          {/* ----------------------------------------------------------------- */}
+          {esMedicoOPresidente ? (
+            // Solo Médicos o Presidentes: ocultar agendar/mis citas y mostrar solo gestión
+            <OpcionCitaCard
+              titulo="Gestionar Citas de Pacientes"
+              descripcion="Aprueba, cancela o reprograma las solicitudes."
+              icono="users"
+              screenName="GestionCitasMedico"
+            />
+          ) : (
+            // Otros usuarios: mostrar agendar y mis citas; ocultar gestión de pacientes
+            <>
+              <OpcionCitaCard
+                titulo="Agendar Nueva Cita"
+                descripcion="Reserva un nuevo espacio con nuestros especialistas."
+                icono="calendar-plus-o"
+                screenName="AgendarCita"
+              />
+              <OpcionCitaCard
+                titulo="Mis Citas Agendadas"
+                descripcion="Consulta el historial y estado de tus citas."
+                icono="history"
+                screenName="HistorialCitas"
+              />
+            </>
+          )}
         </View>
       </ScrollView>
     </View>

@@ -1,4 +1,3 @@
-// src/screens/citas/historialCitas.js
 import React, { useState, useMemo, useCallback } from 'react';
 import {
   View,
@@ -15,22 +14,15 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FontAwesome } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTemasPersonalizado } from '../../hooks/useTemasPersonalizado';
 import * as Animatable from 'react-native-animatable';
-
-// Datos estáticos para simulación (incluye citas atendidas)
-const CITAS_MOCK = [
-  { id: '1', especialidad: 'Cardiología', medico: 'Dr. Alan Turing', fecha: '2025-11-10T10:00:00Z', estatus: 'Aprobada', modificadoPor: 'Médico', canceladoPor: null, justificacion: 'Paciente presenta antecedentes familiares.', fechaAtencion: null },
-  { id: '2', especialidad: 'Pediatría', medico: 'Dra. Ada Lovelace', fecha: '2025-10-20T15:30:00Z', estatus: 'Pendiente', modificadoPor: null, canceladoPor: null, justificacion: '', fechaAtencion: null },
-  { id: '3', especialidad: 'Dermatología', medico: 'Dr. Linus Torvalds', fecha: '2025-09-05T09:00:00Z', estatus: 'Cancelada', modificadoPor: 'Médico', canceladoPor: 'Médico', justificacion: 'Emergencia en quirófano.', fechaAtencion: null },
-  { id: '6', especialidad: 'Oftalmología', medico: 'Dr. Steve Wozniak', fecha: '2025-07-01T11:00:00Z', estatus: 'Atendida', modificadoPor: 'Médico', canceladoPor: null, justificacion: 'Chequeo de rutina completado.', fechaAtencion: '2025-07-01T11:30:00Z' },
-  { id: '4', especialidad: 'General', medico: 'Dra. Grace Hopper', fecha: '2025-08-15T11:00:00Z', estatus: 'Cancelada', modificadoPor: 'Paciente', canceladoPor: 'Paciente', justificacion: 'Viaje de última hora.', fechaAtencion: null },
-  { id: '5', especialidad: 'Cardiología', medico: 'Dr. Alan Turing', fecha: '2025-11-12T14:00:00Z', estatus: 'Reprogramada', modificadoPor: 'Paciente', canceladoPor: null, justificacion: 'Conflicto de horario laboral.', fechaAtencion: null },
-];
+import { useFocusEffect } from '@react-navigation/native';
+import api from '../../utils/api';
 
 const ESTATUS_INFO = {
   Aprobada: { color: '#28a745', icon: 'check-circle' },
@@ -50,65 +42,200 @@ const StatusTag = ({ estatus }) => {
   );
 };
 
+// Helpers de formato (evitan desfases por zona horaria)
+const fmt12h = (hhmm) => {
+  if (!hhmm) return '—';
+  const [H, M] = hhmm.split(':').map((n) => parseInt(n, 10));
+  if (Number.isNaN(H) || Number.isNaN(M)) return '—';
+  let h = H % 12;
+  if (h === 0) h = 12;
+  const ampm = H >= 12 ? 'PM' : 'AM';
+  return `${h}:${String(M).padStart(2, '0')} ${ampm}`;
+};
+const fmtFechaLarga = (yyyyMmDd) => {
+  if (!yyyyMmDd) return '—';
+  try {
+    const d = new Date(yyyyMmDd + 'T00:00:00');
+    return d.toLocaleDateString('es-ES', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+  } catch {
+    return yyyyMmDd;
+  }
+};
+const doctorPrefix = (sexo) => {
+  if (sexo === 'M') return 'Dr.';
+  if (sexo === 'F') return 'Dra.';
+  return 'Dr(a).';
+};
+
+// Selectors de hora (AM/PM) accesibles
+const SegChip = ({ label, active, onPress, color }) => (
+  <TouchableOpacity
+    onPress={onPress}
+    accessibilityRole="button"
+    accessibilityLabel={label}
+    style={{
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 10,
+      borderWidth: 1.5,
+      borderColor: active ? color : '#E5E5E7',
+      backgroundColor: active ? color + '15' : 'transparent',
+      marginRight: 8,
+      marginBottom: 8,
+    }}
+  >
+    <Text style={{ color: active ? color : '#111827', fontWeight: '700' }}>{label}</Text>
+  </TouchableOpacity>
+);
+
 const TarjetaCitaHistorial = React.memo(({ item, onPress }) => {
   const { colores, esOscuro } = useTemasPersonalizado();
   const infoEstatus = ESTATUS_INFO[item?.estatus] || ESTATUS_INFO.Pendiente;
 
-  // Mostrar preview de justificación (máx 120 chars)
-  const preview = item?.justificacion ? (item.justificacion.length > 120 ? item.justificacion.slice(0, 117) + '...' : item.justificacion) : '';
+  const preview = item?.justificacion
+    ? item.justificacion.length > 120
+      ? item.justificacion.slice(0, 117) + '...'
+      : item.justificacion
+    : '';
 
-  // Interacción: admitimos abrir detalle incluso si Atendida/Cancelada.
-  const disabled = false;
+  const fueraHorario = !!item?.fueraHorario;
+  const horaChip = item?.horaStr ? fmt12h(item.horaStr) : '—';
+  const medDisplay = item?.medico ? `${doctorPrefix(item.med_sexo)} ${item.medico}` : '—';
 
   return (
     <TouchableOpacity
       onPress={onPress}
-      disabled={disabled && !preview}
-      style={[
-        styles.itemContainer,
-        { backgroundColor: colores.superficie, shadowColor: esOscuro ? '#000' : '#555', opacity: disabled ? 0.98 : 1 },
-      ]}
+      accessibilityRole="button"
+      accessibilityLabel={`Abrir detalles de la cita con ${medDisplay}`}
+      activeOpacity={0.9}
+      style={{
+        flexDirection: 'row',
+        borderRadius: 12,
+        marginHorizontal: 16,
+        marginTop: 12,
+        marginBottom: 16,
+        backgroundColor: colores.superficie,
+        shadowColor: esOscuro ? '#000' : '#555',
+        elevation: 2,
+      }}
     >
-      <View style={[styles.statusIndicator, { backgroundColor: infoEstatus.color }]} />
-      <View style={styles.itemContent}>
-        <View style={styles.itemHeader}>
-          <Text style={[styles.itemEspecialidad, { color: colores.textoPrincipal }]} numberOfLines={1}>
-            {item?.especialidad ?? '—'}
-          </Text>
-          <StatusTag estatus={item?.estatus ?? 'Pendiente'} />
+      {/* Borde de estado */}
+      <View style={{ width: 6, backgroundColor: infoEstatus.color, borderTopLeftRadius: 12, borderBottomLeftRadius: 12 }} />
+
+      <View style={{ flex: 1, padding: 16 }}>
+        {/* Encabezado: Especialidad + Estado */}
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <View style={{ flex: 1, paddingRight: 12 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: colores.textoPrincipal }} numberOfLines={1}>
+              {item?.especialidad ?? '—'}
+            </Text>
+            {/* Médico con prefijo */}
+            <View style={{ flexDirection: 'row', marginTop: 6, alignItems: 'center' }}>
+              <FontAwesome name="user-md" size={14} color={colores.textoSecundario} />
+              <Text style={{ marginLeft: 8, color: colores.textoSecundario }} numberOfLines={1}>
+                {medDisplay}
+              </Text>
+            </View>
+          </View>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingVertical: 6,
+              paddingHorizontal: 10,
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: infoEstatus.color,
+              backgroundColor: infoEstatus.color + '20',
+            }}
+          >
+            <FontAwesome name={infoEstatus.icon} size={14} color={infoEstatus.color} />
+            <Text style={{ marginLeft: 6, fontWeight: '700', color: colores.textoPrincipal }}>{item?.estatus ?? 'Pendiente'}</Text>
+          </View>
         </View>
 
-        <View style={styles.infoRow}>
-          <FontAwesome name="user-md" size={16} color={colores.textoSecundario} style={styles.infoIcon} />
-          <Text style={[styles.itemMedico, { color: colores.textoSecundario }]} numberOfLines={1}>
-            {item?.medico ?? '—'}
-          </Text>
+        {/* Fecha y hora sin TZ shift */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}>
+          <View
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: 14,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: '#17a2b8' + '20',
+              borderWidth: 1,
+              borderColor: '#17a2b8',
+            }}
+          >
+            <FontAwesome name="calendar-o" size={14} color="#17a2b8" />
+          </View>
+          <View style={{ marginLeft: 10 }}>
+            <Text style={{ color: colores.textoSecundario, fontSize: 12 }}>Programada</Text>
+            <Text style={{ color: colores.textoPrincipal, fontWeight: '700' }}>
+              {fmtFechaLarga(item.fechaStr)} • {horaChip}
+            </Text>
+          </View>
         </View>
 
-        <View style={styles.infoRow}>
-          <FontAwesome name="calendar" size={16} color={colores.textoSecundario} style={styles.infoIcon} />
-          <Text style={[styles.itemFecha, { color: colores.textoSecundario }]}>
-            {item?.fecha ? new Date(item.fecha).toLocaleString('es-ES', { dateStyle: 'long', timeStyle: 'short' }) : '—'}
-          </Text>
-        </View>
-
-        {preview ? (
-          <Text style={[styles.justificacionPreview, { color: colores.textoSecundario }]} numberOfLines={2}>
-            {preview}
-          </Text>
+        {/* Fuera de horario */}
+        {fueraHorario ? (
+          <View
+            style={{
+              marginTop: 8,
+              alignSelf: 'flex-start',
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingHorizontal: 8,
+              paddingVertical: 4,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: '#F59E0B',
+              backgroundColor: '#F59E0B20',
+            }}
+          >
+            <FontAwesome name="exclamation-triangle" size={12} color="#F59E0B" />
+            <Text style={{ marginLeft: 6, color: '#A16207', fontWeight: '700' }}>Fuera de horario: {horaChip}</Text>
+          </View>
         ) : null}
 
-        {item?.estatus === 'Cancelada' && item.canceladoPor && (
-          <Text style={{ color: infoEstatus.color, fontSize: 12, marginTop: 8, fontWeight: '700' }}>
-            Cancelada por: {item.canceladoPor}
-          </Text>
-        )}
+        {/* Motivo o justificación */}
+        {item?.motivo ? (
+          <View style={{ marginTop: 12 }}>
+            <Text style={{ color: colores.textoSecundario, fontSize: 12, marginBottom: 4 }}>Motivo</Text>
+            <Text style={{ color: colores.textoPrincipal, fontSize: 15, lineHeight: 22 }} numberOfLines={3}>
+              {item.motivo}
+            </Text>
+          </View>
+        ) : preview ? (
+          <View style={{ marginTop: 12 }}>
+            <Text style={{ color: colores.textoSecundario, fontSize: 12, marginBottom: 4 }}>Nota</Text>
+            <Text style={{ color: colores.textoPrincipal, fontSize: 15, lineHeight: 22 }} numberOfLines={3}>
+              {preview}
+            </Text>
+          </View>
+        ) : null}
 
-        {item?.estatus === 'Atendida' && item.fechaAtencion && (
-          <Text style={{ color: colores.textoSecundario, fontSize: 12, marginTop: 8 }}>
-            Atendida: {new Date(item.fechaAtencion).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}
-          </Text>
-        )}
+        {/* Separador */}
+        <View style={{ height: 1, backgroundColor: '#F0F0F0', marginTop: 14, marginBottom: 10 }} />
+
+        {/* Footer: acción principal */}
+        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center' }}>
+          <TouchableOpacity
+            onPress={onPress}
+            style={{
+              backgroundColor: colores.principal,
+              paddingVertical: 8,
+              paddingHorizontal: 12,
+              borderRadius: 8,
+              flexDirection: 'row',
+              alignItems: 'center',
+            }}
+          >
+            <FontAwesome name="eye" size={12} color="#fff" />
+            <Text style={{ color: '#fff', fontWeight: '700', marginLeft: 6 }}>Ver detalle</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -118,7 +245,10 @@ export default function HistorialCitas() {
   const insets = useSafeAreaInsets();
   const { colores, esOscuro } = useTemasPersonalizado();
 
-  const [citas, setCitas] = useState(CITAS_MOCK);
+  const [citas, setCitas] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
   const [activeTab, setActiveTab] = useState('Activas'); // 'Activas' | 'Historial'
   const [busqueda, setBusqueda] = useState('');
   const [filtroEstatus, setFiltroEstatus] = useState('Todos');
@@ -135,7 +265,94 @@ export default function HistorialCitas() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // asegurar arrays y separar act/asistidas
+  // Select de hora AM/PM para reprogramar
+  const [hour12, setHour12] = useState(9);
+  const [minute, setMinute] = useState('00');
+  const [ampm, setAmpm] = useState('AM');
+  const [usarHoraActual, setUsarHoraActual] = useState(true);
+  const [permitirFueraHorario, setPermitirFueraHorario] = useState(false);
+
+  const parseHoraTo12 = useCallback((hhmm) => {
+    if (!hhmm) return { h12: 9, mm: '00', ampm: 'AM' };
+    const [H, M] = hhmm.split(':').map((n) => parseInt(n, 10));
+    const am = H < 12;
+    let h12 = H % 12;
+    if (h12 === 0) h12 = 12;
+    return { h12, mm: String(M).padStart(2, '0'), ampm: am ? 'AM' : 'PM' };
+  }, []);
+
+  const to24h = useCallback((h12, mm, ampmFlag) => {
+    let h = parseInt(h12, 10);
+    if (ampmFlag === 'AM') {
+      if (h === 12) h = 0;
+    } else {
+      if (h !== 12) h = h + 12;
+    }
+    return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  }, []);
+
+  // Mapea respuesta backend a forma usada por UI
+  const mapCitas = useCallback((arr) => {
+    return (arr || []).map((r) => {
+      const med_sexo = r.med_sexo || r.sexo_medico || null;
+      const just = r.justificacion || '';
+      const fueraHorario = !!r.fueraHorario || /\[FUERA_HORARIO\]/i.test(just);
+
+      // fuente principal: r.fecha y r.hora del backend
+      const fechaStr = r.fecha || (r.fechaSolicitud ? new Date(r.fechaSolicitud).toISOString().slice(0, 10) : null);
+      const horaStr = r.hora || (r.fechaSolicitud ? `${String(new Date(r.fechaSolicitud).getHours()).padStart(2,'0')}:${String(new Date(r.fechaSolicitud).getMinutes()).padStart(2,'0')}` : null);
+
+      return {
+        id: String(r.id_cita ?? r.id ?? Math.random()),
+        id_cita: r.id_cita,
+        especialidad: r.especialidad || '—',
+        medico: r.medico || `${(r.med_nombre || '')} ${(r.med_apellido || '')}`.trim(),
+        med_sexo,
+        fechaStr,
+        horaStr,
+        fecha: fechaStr && horaStr ? `${fechaStr}T${horaStr}:00` : null,
+        fechaSolicitud: r.fechaSolicitud || (fechaStr && horaStr ? new Date(`${fechaStr}T${horaStr}:00`).toISOString() : null),
+        estatus: r.estatus || 'Pendiente',
+        modificadoPor: r.modificadoPor || null,
+        canceladoPor: r.canceladoPor || null,
+        justificacion: just,
+        motivo: r.motivo || '',
+        fechaAtencion: r.fechaAtencion || null,
+        fueraHorario,
+      };
+    });
+  }, []);
+
+  const fetchCitas = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await api.get('/citas/mias');
+      const arr = Array.isArray(data) ? data : data?.data || [];
+      setCitas(mapCitas(arr));
+    } catch (e) {
+      api.handleError?.(e);
+      setCitas([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [mapCitas]);
+
+  const refresh = useCallback(async () => {
+    try {
+      setRefreshing(true);
+      const data = await api.get('/citas/mias');
+      const arr = Array.isArray(data) ? data : data?.data || [];
+      setCitas(mapCitas(arr));
+    } catch (e) {
+      api.handleError?.(e);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [mapCitas]);
+
+  useFocusEffect(useCallback(() => { fetchCitas(); }, [fetchCitas]));
+
+  // separar activas/atendidas
   const { citasActivas, citasAtendidas } = useMemo(() => {
     const arr = Array.isArray(citas) ? citas : [];
     return {
@@ -150,13 +367,19 @@ export default function HistorialCitas() {
     if (busqueda) {
       const q = busqueda.toLowerCase();
       base = base.filter(
-        (c) => (c?.especialidad ?? '').toLowerCase().includes(q) || (c?.medico ?? '').toLowerCase().includes(q)
+        (c) =>
+          (c?.especialidad ?? '').toLowerCase().includes(q) ||
+          (c?.medico ?? '').toLowerCase().includes(q)
       );
     }
     if (filtroEstatus !== 'Todos') {
       base = base.filter((c) => c?.estatus === filtroEstatus);
     }
-    return base.slice().sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+    return base.slice().sort((a, b) => {
+      const keyA = `${a.fechaStr || ''}T${a.horaStr || '00:00'}`;
+      const keyB = `${b.fechaStr || ''}T${b.horaStr || '00:00'}`;
+      return new Date(keyB) - new Date(keyA);
+    });
   }, [citasActivas, citasAtendidas, activeTab, busqueda, filtroEstatus]);
 
   const openActionModal = useCallback((cita) => {
@@ -172,39 +395,106 @@ export default function HistorialCitas() {
   const openGestionModal = useCallback((accion) => {
     setTipoAccion(accion);
     setJustificacion('');
-    setNuevaFecha(new Date());
+    // inicializa fecha y hora con los actuales
+    const base = citaSeleccionada?.fechaStr
+      ? new Date(`${citaSeleccionada.fechaStr}T00:00:00`)
+      : new Date();
+    setNuevaFecha(base);
+    // hora
+    const parsed = parseHoraTo12(citaSeleccionada?.horaStr || '09:00');
+    setHour12(parsed.h12);
+    setMinute(parsed.mm);
+    setAmpm(parsed.ampm);
+    setUsarHoraActual(true);
+    setPermitirFueraHorario(!!citaSeleccionada?.fueraHorario);
     setModalAccionVisible(false);
     setModalGestionVisible(true);
-  }, []);
+  }, [citaSeleccionada, parseHoraTo12]);
 
   const openDetalleModal = useCallback(() => {
     setModalAccionVisible(false);
     setModalDetalleVisible(true);
   }, []);
 
-  const handleConfirmarAccion = useCallback(() => {
+  const handleConfirmarAccion = useCallback(async () => {
+    if (tipoAccion !== 'reprogramar' && tipoAccion !== 'cancelar') return;
+
     if (!justificacion.trim()) {
       Alert.alert('Validación', 'Por favor, provee una justificación.');
       return;
     }
     setIsSubmitting(true);
-    setTimeout(() => {
-      setCitas((prev) =>
-        prev.map((c) => {
-          if (c?.id === (citaSeleccionada && citaSeleccionada.id)) {
-            if (tipoAccion === 'reprogramar')
-              return { ...c, estatus: 'Reprogramada', fecha: nuevaFecha.toISOString(), justificacion, modificadoPor: 'Paciente' };
-            if (tipoAccion === 'cancelar')
-              return { ...c, estatus: 'Cancelada', justificacion, canceladoPor: 'Paciente', modificadoPor: 'Paciente' };
-          }
-          return c;
-        })
-      );
-      setIsSubmitting(false);
+
+    try {
+      if (tipoAccion === 'reprogramar') {
+        const fecha = `${nuevaFecha.getFullYear()}-${String(nuevaFecha.getMonth() + 1).padStart(2, '0')}-${String(nuevaFecha.getDate()).padStart(2, '0')}`;
+        const hora = usarHoraActual
+          ? (citaSeleccionada?.horaStr || '09:00')
+          : to24h(hour12, minute, ampm);
+
+        await api.patch(`/citas/${citaSeleccionada.id_cita}/reprogramar`, {
+          fecha,
+          hora,
+          justificacion,
+          allow_out_of_schedule: permitirFueraHorario,
+        });
+
+        // Actualiza UI local
+        setCitas((prev) =>
+          prev.map((c) =>
+            c.id === citaSeleccionada.id
+              ? {
+                  ...c,
+                  estatus: 'Reprogramada',
+                  fechaStr: fecha,
+                  horaStr: hora,
+                  fecha: `${fecha}T${hora}:00`,
+                  fechaSolicitud: new Date(`${fecha}T${hora}:00`).toISOString(),
+                  justificacion: `[REPROGRAMADA] ${c.justificacion || ''}`.trim(),
+                  fueraHorario: permitirFueraHorario || c.fueraHorario || false,
+                  modificadoPor: 'Paciente',
+                }
+              : c
+          )
+        );
+      }
+
+      if (tipoAccion === 'cancelar') {
+        // Si más adelante añades endpoint de cancelación, llámalo aquí.
+        setCitas((prev) =>
+          prev.map((c) =>
+            c.id === citaSeleccionada.id
+              ? {
+                  ...c,
+                  estatus: 'Cancelada',
+                  justificacion,
+                  canceladoPor: 'Paciente',
+                  modificadoPor: 'Paciente',
+                }
+              : c
+          )
+        );
+      }
+
+      Alert.alert('Éxito', tipoAccion === 'reprogramar' ? 'Tu cita fue reprogramada.' : 'Tu cita fue cancelada.');
       setModalGestionVisible(false);
-      Alert.alert('Éxito', 'Tu solicitud ha sido enviada.');
-    }, 900);
-  }, [citaSeleccionada, tipoAccion, justificacion, nuevaFecha]);
+    } catch (e) {
+      api.handleError?.(e);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [
+    tipoAccion,
+    justificacion,
+    nuevaFecha,
+    usarHoraActual,
+    hour12,
+    minute,
+    ampm,
+    citaSeleccionada,
+    permitirFueraHorario,
+    to24h,
+  ]);
 
   const onDateChange = (event, selectedDate) => {
     setShowDatePicker(false);
@@ -216,10 +506,40 @@ export default function HistorialCitas() {
     setModalEstatusVisible(false);
   };
 
+  const EmptyState = ({ texto, subtitulo }) => (
+    <View style={{ alignItems: 'center', marginTop: 50, paddingHorizontal: 24 }}>
+      <FontAwesome name="calendar-o" size={28} color={colores.textoSecundario} />
+      <Text style={{ textAlign: 'center', marginTop: 12, color: colores.textoSecundario, fontSize: 15, lineHeight: 22 }}>
+        {texto}
+      </Text>
+      {subtitulo ? (
+        <Text style={{ textAlign: 'center', marginTop: 6, color: colores.textoSecundario, fontSize: 13 }}>
+          {subtitulo}
+        </Text>
+      ) : null}
+    </View>
+  );
+
+  const RecargarButton = () => (
+    <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityLabel="Recargar citas"
+      accessibilityHint="Vuelve a cargar tu historial de citas"
+      onPress={fetchCitas}
+      style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, borderWidth: 1, borderColor: colores.principal }}
+    >
+      <FontAwesome name="refresh" size={16} color={colores.principal} />
+      <Text style={{ marginLeft: 8, color: colores.principal, fontWeight: '700' }}>Recargar</Text>
+    </TouchableOpacity>
+  );
+
   return (
     <View style={[styles.container, { backgroundColor: colores.fondo, paddingTop: insets.top }]}>
       <View style={{ paddingHorizontal: 20, paddingTop: 10 }}>
-        <Text style={[styles.headerTitle, { color: colores.textoPrincipal }]}>Mi Historial de Citas</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text style={[styles.headerTitle, { color: colores.textoPrincipal }]}>Mi Historial de Citas</Text>
+          <RecargarButton />
+        </View>
 
         <View style={styles.tabContainer}>
           <TouchableOpacity onPress={() => setActiveTab('Activas')} style={[styles.tabButton, activeTab === 'Activas' && { backgroundColor: colores.principal }]}>
@@ -230,24 +550,36 @@ export default function HistorialCitas() {
           </TouchableOpacity>
         </View>
 
-        <View style={[styles.searchWrapper, { backgroundColor: esOscuro ? '#1C1C1E' : '#FFF' }]}>
-          <FontAwesome name="search" size={18} color={colores.textoSecundario} />
+        {/* Buscador más notable */}
+        <View style={[styles.searchWrapper, { backgroundColor: esOscuro ? '#151517' : '#FFFFFF' }]}>
+          <FontAwesome name="search" size={18} color={colores.principal} />
           <TextInput
             style={[styles.searchInput, { color: colores.textoPrincipal }]}
             placeholder="Buscar por médico o especialidad..."
             placeholderTextColor={colores.textoSecundario}
             value={busqueda}
             onChangeText={setBusqueda}
+            accessibilityLabel="Buscar citas"
+            accessibilityHint="Filtra por médico o especialidad"
           />
         </View>
 
-        <TouchableOpacity onPress={() => setModalEstatusVisible(true)} style={[styles.filterChip, { borderColor: colores.textoSecundario }]}>
+        <TouchableOpacity
+          onPress={() => setModalEstatusVisible(true)}
+          style={[styles.filterChip, { borderColor: colores.textoSecundario }]}
+          accessibilityRole="button"
+          accessibilityLabel="Filtrar por estado"
+        >
           <FontAwesome name="filter" size={14} color={colores.textoSecundario} />
           <Text style={[styles.filterChipText, { color: colores.textoSecundario }]}>{filtroEstatus}</Text>
         </TouchableOpacity>
       </View>
 
-      {activeTab === 'Activas' ? (
+      {loading ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator color={colores.principal} size="large" />
+        </View>
+      ) : activeTab === 'Activas' ? (
         <SectionList
           sections={['Pendiente', 'Reprogramada', 'Aprobada', 'Cancelada'].map((key) => {
             const data = citasFiltradas.filter((c) => c?.estatus === key);
@@ -258,7 +590,6 @@ export default function HistorialCitas() {
             <TarjetaCitaHistorial
               item={item}
               onPress={() => {
-                // Canceladas/Atendidas: abrir solo detalle; Activas: abrir acción
                 if (item?.estatus === 'Atendida' || item?.estatus === 'Cancelada') openDetalleModalDirect(item);
                 else openActionModal(item);
               }}
@@ -269,8 +600,14 @@ export default function HistorialCitas() {
               <Text style={styles.sectionHeaderText}>{title}</Text>
             </View>
           )}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 50 }}
-          ListEmptyComponent={<Text style={{ textAlign: 'center', marginTop: 50, color: colores.textoSecundario }}>No se encontraron citas.</Text>}
+          contentContainerStyle={{ paddingHorizontal: 4, paddingBottom: 50 }}
+          ListEmptyComponent={
+            <EmptyState
+              texto="Aún no tienes citas activas."
+              subtitulo="Solicita tu primera cita desde Agendar Cita para comenzar tu historial."
+            />
+          }
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colores.principal} />}
         />
       ) : (
         <FlatList
@@ -279,16 +616,21 @@ export default function HistorialCitas() {
           renderItem={({ item }) => (
             <TarjetaCitaHistorial
               item={item}
-              // Para las citas atendidas abrimos detalle directo (solo lectura)
               onPress={() => openDetalleModalDirect(item)}
             />
           )}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 50 }}
-          ListEmptyComponent={<Text style={{ textAlign: 'center', marginTop: 50, color: colores.textoSecundario }}>No hay citas atendidas.</Text>}
+          contentContainerStyle={{ paddingHorizontal: 4, paddingTop: 10, paddingBottom: 50 }}
+          ListEmptyComponent={
+            <EmptyState
+              texto="No has solicitado ninguna cita atendida."
+              subtitulo="Cuando completes una consulta, aparecerá aquí."
+            />
+          }
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colores.principal} />}
         />
       )}
 
-      {/* MODALES (sin cambios funcionales respecto a behavior anteriormente aceptado) */}
+      {/* MODALES */}
       <Modal visible={modalAccionVisible} transparent animationType="fade" onRequestClose={() => setModalAccionVisible(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setModalAccionVisible(false)}>
           <Pressable style={[styles.actionModalContainer, { backgroundColor: colores.superficie }]}>
@@ -297,32 +639,28 @@ export default function HistorialCitas() {
             </TouchableOpacity>
             <Text style={[styles.modalTitle, { color: colores.textoPrincipal }]}>Gestionar Cita</Text>
             <Text style={{ color: colores.textoSecundario, marginBottom: 18, textAlign: 'center' }}>
-              {citaSeleccionada?.especialidad ?? ''} — {citaSeleccionada?.medico ?? ''}
+              {citaSeleccionada?.especialidad ?? ''} — {citaSeleccionada?.medico ? `${doctorPrefix(citaSeleccionada.med_sexo)} ${citaSeleccionada.medico}` : '—'}
             </Text>
 
-            {citaSeleccionada?.estatus === 'Atendida' ? (
-              <TouchableOpacity style={[styles.actionCard, { borderColor: colores.textoSecundario }]} onPress={openDetalleModal}>
-                <FontAwesome name="info-circle" size={20} color={colores.textoSecundario} />
-                <Text style={[styles.actionCardTitle, { color: colores.textoPrincipal, marginLeft: 12 }]}>Ver detalles</Text>
-              </TouchableOpacity>
-            ) : (
-              <>
-                <TouchableOpacity style={[styles.actionCard, { borderColor: colores.textoSecundario }]} onPress={openDetalleModal}>
-                  <FontAwesome name="info-circle" size={20} color={colores.textoSecundario} />
-                  <Text style={[styles.actionCardTitle, { color: colores.textoPrincipal, marginLeft: 12 }]}>Ver detalles</Text>
-                </TouchableOpacity>
+            <TouchableOpacity style={[styles.actionCard, { borderColor: colores.textoSecundario }]} onPress={openDetalleModal}>
+              <FontAwesome name="info-circle" size={20} color={colores.textoSecundario} />
+              <Text style={[styles.actionCardTitle, { color: colores.textoPrincipal, marginLeft: 12 }]}>Ver detalles</Text>
+            </TouchableOpacity>
 
-                <TouchableOpacity style={[styles.actionCard, { borderColor: ESTATUS_INFO.Reprogramada.color }]} onPress={() => openGestionModal('reprogramar')}>
-                  <FontAwesome name="calendar" size={20} color={ESTATUS_INFO.Reprogramada.color} />
-                  <Text style={[styles.actionCardTitle, { color: colores.textoPrincipal, marginLeft: 12 }]}>Reprogramar</Text>
-                </TouchableOpacity>
+            <TouchableOpacity style={[styles.actionCard, { borderColor: ESTATUS_INFO.Reprogramada.color }]} onPress={() => openGestionModal('reprogramar')}>
+              <FontAwesome name="calendar" size={20} color={ESTATUS_INFO.Reprogramada.color} />
+              <Text style={[styles.actionCardTitle, { color: colores.textoPrincipal, marginLeft: 12 }]}>Reprogramar</Text>
+            </TouchableOpacity>
 
-                <TouchableOpacity style={[styles.actionCard, { borderColor: ESTATUS_INFO.Cancelada.color }]} onPress={() => openGestionModal('cancelar')}>
-                  <FontAwesome name="times-circle" size={20} color={ESTATUS_INFO.Cancelada.color} />
-                  <Text style={[styles.actionCardTitle, { color: colores.textoPrincipal, marginLeft: 12 }]}>Cancelar</Text>
-                </TouchableOpacity>
-              </>
-            )}
+            <TouchableOpacity style={[styles.actionCard, { borderColor: ESTATUS_INFO.Cancelada.color }]} onPress={() => {
+              setTipoAccion('cancelar');
+              setJustificacion('');
+              setModalAccionVisible(false);
+              setModalGestionVisible(true);
+            }}>
+              <FontAwesome name="times-circle" size={20} color={ESTATUS_INFO.Cancelada.color} />
+              <Text style={[styles.actionCardTitle, { color: colores.textoPrincipal, marginLeft: 12 }]}>Cancelar</Text>
+            </TouchableOpacity>
           </Pressable>
         </Pressable>
       </Modal>
@@ -333,29 +671,115 @@ export default function HistorialCitas() {
             <TouchableOpacity style={styles.closeButton} onPress={() => setModalGestionVisible(false)}>
               <FontAwesome name="close" size={24} color={colores.textoSecundario} />
             </TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: colores.textoPrincipal }]}>{tipoAccion === 'reprogramar' ? 'Reprogramar Cita' : 'Cancelar Cita'}</Text>
+            <Text style={[styles.modalTitle, { color: colores.textoPrincipal }]}>
+              {tipoAccion === 'reprogramar' ? 'Reprogramar Cita' : 'Cancelar Cita'}
+            </Text>
 
             {tipoAccion === 'reprogramar' && (
               <>
-                <Text style={[styles.label, { color: colores.textoSecundario }]}>Nueva Fecha</Text>
+                <Text style={[styles.label, { color: colores.textoSecundario, marginBottom: 6 }]}>Nueva Fecha</Text>
                 <TouchableOpacity onPress={() => setShowDatePicker(true)} style={[styles.datePickerButton, { borderColor: colores.principal }]}>
-                  <Text style={{ color: colores.principal, fontSize: 16 }}>{nuevaFecha.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</Text>
+                  <Text style={{ color: colores.principal, fontSize: 16 }}>
+                    {nuevaFecha.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}
+                  </Text>
                 </TouchableOpacity>
                 {showDatePicker && <DateTimePicker value={nuevaFecha} mode="date" display="calendar" onChange={onDateChange} />}
+
+                {/* Hora: usar la actual o seleccionar nueva */}
+                <View style={{ marginTop: 10 }}>
+                  <TouchableOpacity
+                    onPress={() => setUsarHoraActual(!usarHoraActual)}
+                    style={{ flexDirection: 'row', alignItems: 'center' }}
+                    accessibilityRole="button"
+                    accessibilityLabel={usarHoraActual ? 'Usar hora actual (activado)' : 'Usar hora actual (desactivado)'}
+                  >
+                    <FontAwesome name={usarHoraActual ? 'toggle-on' : 'toggle-off'} size={28} color={colores.principal} />
+                    <Text style={{ marginLeft: 8, color: colores.textoPrincipal, fontWeight: '700' }}>
+                      {usarHoraActual ? 'Usar la misma hora' : 'Elegir nueva hora'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {!usarHoraActual && (
+                    <View style={{ marginTop: 10 }}>
+                      {/* Select de horas 1-12 */}
+                      <Text style={[styles.label, { color: colores.textoSecundario }]}>Hora</Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                        {[...Array(12)].map((_, idx) => {
+                          const val = idx + 1;
+                          return (
+                            <SegChip
+                              key={`h-${val}`}
+                              label={String(val)}
+                              active={hour12 === val}
+                              onPress={() => setHour12(val)}
+                              color={colores.principal}
+                            />
+                          );
+                        })}
+                      </View>
+
+                      {/* Minutos */}
+                      <Text style={[styles.label, { color: colores.textoSecundario, marginTop: 6 }]}>Minutos</Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                        {['00', '15', '30', '45'].map((mm) => (
+                          <SegChip
+                            key={`m-${mm}`}
+                            label={mm}
+                            active={minute === mm}
+                            onPress={() => setMinute(mm)}
+                            color={colores.principal}
+                          />
+                        ))}
+                      </View>
+
+                      {/* AM/PM */}
+                      <Text style={[styles.label, { color: colores.textoSecundario, marginTop: 6 }]}>Periodo</Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                        {['AM', 'PM'].map((p) => (
+                          <SegChip
+                            key={`p-${p}`}
+                            label={p}
+                            active={ampm === p}
+                            onPress={() => setAmpm(p)}
+                            color={colores.principal}
+                          />
+                        ))}
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Permitir fuera de horario */}
+                  <TouchableOpacity
+                    onPress={() => setPermitirFueraHorario(!permitirFueraHorario)}
+                    style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}
+                  >
+                    <FontAwesome name={permitirFueraHorario ? 'check-square' : 'square-o'} size={18} color={'#F59E0B'} />
+                    <Text style={{ marginLeft: 8, color: '#A16207', fontWeight: '700' }}>
+                      Permitir fuera de horario
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </>
             )}
 
-            <Text style={[styles.label, { color: colores.textoSecundario, marginTop: 12 }]}>Justificación (obligatoria)</Text>
+            <Text style={[styles.label, { color: colores.textoSecundario, marginTop: 12 }]}>
+              Justificación {tipoAccion === 'cancelar' ? '(obligatoria)' : '(obligatoria)'}
+            </Text>
             <TextInput
-              style={[styles.modalInput, { borderColor: '#CCC', color: colores.textoPrincipal, backgroundColor: esOscuro ? '#2C2C2E' : '#F2F2F7' }]}
+              style={[styles.modalInput, { borderColor: '#CCC', color: colores.textoPrincipal, backgroundColor: esOscuro ? '#2C2C2E' : '#F8FAFC' }]}
               value={justificacion}
               onChangeText={setJustificacion}
               multiline
               placeholder="Explica por qué reprogramas o cancelas..."
+              accessibilityLabel="Escribe la justificación"
             />
 
-            <TouchableOpacity style={[styles.modalButton, { backgroundColor: isSubmitting ? '#AAA' : colores.principal }]} onPress={handleConfirmarAccion} disabled={isSubmitting}>
-              {isSubmitting ? <ActivityIndicator color="#FFF" /> : <Text style={styles.modalButtonText}>Enviar</Text>}
+            <TouchableOpacity
+              style={[styles.modalButton, { backgroundColor: isSubmitting ? '#AAA' : colores.principal }]}
+              onPress={handleConfirmarAccion}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? <ActivityIndicator color="#FFF" /> : <Text style={styles.modalButtonText}>Confirmar</Text>}
             </TouchableOpacity>
           </Pressable>
         </KeyboardAvoidingView>
@@ -364,7 +788,7 @@ export default function HistorialCitas() {
       <Modal visible={modalDetalleVisible} animationType="slide" onRequestClose={() => setModalDetalleVisible(false)}>
         <ScrollView style={{ flex: 1, backgroundColor: esOscuro ? '#000' : '#F2F2F7' }}>
           <View style={{ paddingTop: insets.top + 10, paddingHorizontal: 20 }}>
-            <TouchableOpacity onPress={() => setModalDetalleVisible(false)} style={styles.detalleCloseButton}>
+            <TouchableOpacity onPress={() => setModalDetalleVisible(false)} style={styles.detalleCloseButton} accessibilityLabel="Cerrar detalle">
               <FontAwesome name="close" size={28} color={colores.textoPrincipal} />
             </TouchableOpacity>
             <Text style={[styles.detalleHeaderTitle, { color: colores.textoPrincipal }]}>Detalle de la Cita</Text>
@@ -374,26 +798,51 @@ export default function HistorialCitas() {
             <View style={{ padding: 20 }}>
               <View style={styles.detalleSection}>
                 <Text style={[styles.detalleSectionTitle, { color: colores.principal }]}>Cita</Text>
-                <View style={styles.detalleRow}><Text style={[styles.detalleLabel, { color: colores.textoSecundario }]}>Especialidad</Text><Text style={[styles.detalleValue, { color: colores.textoPrincipal }]}>{citaSeleccionada.especialidad ?? '—'}</Text></View>
-                <View style={styles.detalleRow}><Text style={[styles.detalleLabel, { color: colores.textoSecundario }]}>Médico</Text><Text style={[styles.detalleValue, { color: colores.textoPrincipal }]}>{citaSeleccionada.medico ?? '—'}</Text></View>
-                <View style={styles.detalleRow}><Text style={[styles.detalleLabel, { color: colores.textoSecundario }]}>Fecha y Hora</Text><Text style={[styles.detalleValue, { color: colores.textoPrincipal }]}>{citaSeleccionada.fecha ? new Date(citaSeleccionada.fecha).toLocaleString('es-ES') : '—'}</Text></View>
-                <View style={styles.detalleRow}><Text style={[styles.detalleLabel, { color: colores.textoSecundario }]}>Estado</Text><StatusTag estatus={citaSeleccionada.estatus ?? 'Pendiente'} /></View>
+                <View style={styles.detalleRow}>
+                  <Text style={[styles.detalleLabel, { color: colores.textoSecundario }]}>Especialidad</Text>
+                  <Text style={[styles.detalleValue, { color: colores.textoPrincipal }]}>{citaSeleccionada.especialidad ?? '—'}</Text>
+                </View>
+                <View style={styles.detalleRow}>
+                  <Text style={[styles.detalleLabel, { color: colores.textoSecundario }]}>Médico</Text>
+                  <Text style={[styles.detalleValue, { color: colores.textoPrincipal }]}>
+                    {citaSeleccionada.medico ? `${doctorPrefix(citaSeleccionada.med_sexo)} ${citaSeleccionada.medico}` : '—'}
+                  </Text>
+                </View>
+                <View style={styles.detalleRow}>
+                  <Text style={[styles.detalleLabel, { color: colores.textoSecundario }]}>Fecha</Text>
+                  <Text style={[styles.detalleValue, { color: colores.textoPrincipal }]}>{fmtFechaLarga(citaSeleccionada.fechaStr)}</Text>
+                </View>
+                <View style={styles.detalleRow}>
+                  <Text style={[styles.detalleLabel, { color: colores.textoSecundario }]}>Hora</Text>
+                  <Text style={[styles.detalleValue, { color: colores.textoPrincipal }]}>{fmt12h(citaSeleccionada.horaStr)}</Text>
+                </View>
+                <View style={styles.detalleRow}>
+                  <Text style={[styles.detalleLabel, { color: colores.textoSecundario }]}>Estado</Text>
+                  <StatusTag estatus={citaSeleccionada.estatus ?? 'Pendiente'} />
+                </View>
+                {citaSeleccionada.fueraHorario ? (
+                  <View style={[styles.detalleRow, { borderBottomWidth: 0, paddingVertical: 10 }]}>
+                    <Text style={[styles.detalleLabel, { color: colores.textoSecundario }]}>Observación</Text>
+                    <Text style={[styles.detalleValue, { color: '#A16207', fontWeight: '800' }]}>
+                      Fuera de horario: {fmt12h(citaSeleccionada.horaStr)}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
 
               <View style={styles.detalleSection}>
                 <Text style={[styles.detalleSectionTitle, { color: colores.principal }]}>Justificación</Text>
                 <Text style={{ color: colores.textoSecundario }}>{citaSeleccionada.justificacion || 'Sin justificación'}</Text>
-                {citaSeleccionada.estatus === 'Cancelada' && citaSeleccionada.canceladoPor && (
-                  <Text style={{ color: ESTATUS_INFO.Cancelada.color, marginTop: 8, fontWeight: '700' }}>Cancelada por: {citaSeleccionada.canceladoPor}</Text>
-                )}
               </View>
 
-              {citaSeleccionada.estatus === 'Atendida' && citaSeleccionada.fechaAtencion && (
+              {citaSeleccionada.fechaAtencion ? (
                 <View style={styles.detalleSection}>
                   <Text style={[styles.detalleSectionTitle, { color: colores.principal }]}>Registro de Atención</Text>
-                  <Text style={{ color: colores.textoSecundario }}>Atendida el: {new Date(citaSeleccionada.fechaAtencion).toLocaleString('es-ES')}</Text>
+                  <Text style={{ color: colores.textoSecundario }}>
+                    Atendida el: {new Date(citaSeleccionada.fechaAtencion).toLocaleString('es-ES', { dateStyle: 'long', timeStyle: 'short', hour12: true })}
+                  </Text>
                 </View>
-              )}
+              ) : null}
             </View>
           ) : (
             <Text style={{ padding: 20, color: colores.textoSecundario }}>Selecciona una cita para ver detalles.</Text>
@@ -410,6 +859,7 @@ export default function HistorialCitas() {
                 key={estado}
                 style={[styles.actionCard, { borderColor: filtroEstatus === estado ? colores.principal : '#EEE' }]}
                 onPress={() => setFiltroDesdeModal(estado)}
+                accessibilityLabel={`Filtrar por ${estado}`}
               >
                 <FontAwesome name={ESTATUS_INFO[estado]?.icon || 'list'} size={18} color={ESTATUS_INFO[estado]?.color || colores.textoSecundario} />
                 <Text style={[styles.actionCardTitle, { color: colores.textoPrincipal, marginLeft: 12 }]}>{estado}</Text>
@@ -424,40 +874,44 @@ export default function HistorialCitas() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  headerTitle: { fontSize: 28, fontWeight: '700', marginBottom: 12 },
-  tabContainer: { flexDirection: 'row', backgroundColor: '#E5E5EA', borderRadius: 10, padding: 4, marginBottom: 12 },
-  tabButton: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
+  headerTitle: { fontSize: 28, fontWeight: '800', letterSpacing: 0.5, marginBottom: 12 },
+  tabContainer: { flexDirection: 'row', backgroundColor: '#E5E5EA', borderRadius: 12, padding: 4, marginBottom: 14, marginTop: 6 },
+  tabButton: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
   tabText: { fontWeight: '700' },
-  searchWrapper: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, paddingHorizontal: 15, marginBottom: 12 },
+  searchWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginBottom: 12,
+    borderWidth: 1.5,
+    borderColor: '#D1D5DB',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 1,
+  },
   searchInput: { flex: 1, height: 48, marginLeft: 10, fontSize: 16 },
-  filterChip: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 20, borderWidth: 1.2 },
+  filterChip: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 20, borderWidth: 1.2, marginBottom: 8 },
   filterChipText: { marginLeft: 8, fontWeight: '700', fontSize: 14 },
-  itemContainer: { flexDirection: 'row', borderRadius: 12, marginVertical: 8, marginHorizontal: 0, elevation: 2, shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
-  statusIndicator: { width: 6, borderTopLeftRadius: 12, borderBottomLeftRadius: 12 },
-  itemContent: { flex: 1, padding: 14 },
-  itemHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  itemEspecialidad: { fontSize: 16, fontWeight: '700' },
-  infoRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
-  infoIcon: { width: 20 },
-  itemMedico: { fontSize: 14 },
-  itemFecha: { fontSize: 13, fontStyle: 'italic' },
-  justificacionPreview: { marginTop: 8, fontSize: 13, lineHeight: 18 },
   statusTag: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
   statusTagText: { marginLeft: 6, fontSize: 11, fontWeight: '700' },
-  sectionHeader: { paddingVertical: 10, paddingHorizontal: 12, borderTopWidth: 1, borderTopColor: '#E6E6E9', marginTop: 10 },
-  sectionHeaderText: { fontSize: 14, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.8 },
+  sectionHeader: { paddingVertical: 8, paddingHorizontal: 16, borderTopWidth: 1, borderTopColor: '#E6E6E9', marginTop: 6 },
+  sectionHeaderText: { fontSize: 13, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.8 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  actionModalContainer: { borderRadius: 12, paddingVertical: 18, paddingHorizontal: 14, width: '100%', maxWidth: 420, alignItems: 'center' },
+  actionModalContainer: { borderRadius: 12, paddingVertical: 18, paddingHorizontal: 14, width: '100%', maxWidth: 440, alignItems: 'center' },
   actionCard: { flexDirection: 'row', alignItems: 'center', width: '100%', padding: 12, borderRadius: 10, borderWidth: 1.2, marginBottom: 10 },
   actionCardTitle: { fontSize: 16, fontWeight: '700' },
   closeButton: { position: 'absolute', top: 12, right: 12, padding: 6 },
   modalTitle: { fontSize: 18, fontWeight: '800', marginBottom: 10 },
-  gestionModalContainer: { borderRadius: 12, padding: 16, width: '100%', maxWidth: 420, alignItems: 'center' },
-  datePickerButton: { width: '100%', borderWidth: 1, borderRadius: 10, padding: 12, alignItems: 'center', marginBottom: 12 },
-  modalInput: { width: '100%', borderWidth: 1, borderRadius: 10, padding: 12, minHeight: 80, textAlignVertical: 'top', fontSize: 15, marginBottom: 12 },
-  modalButton: { width: '100%', padding: 12, borderRadius: 10, alignItems: 'center' },
-  modalButtonText: { color: '#FFF', fontWeight: '700' },
-  detalleContainer: { flex: 1 },
+  gestionModalContainer: { borderRadius: 12, padding: 16, width: '100%', maxWidth: 440, alignItems: 'center' },
+  datePickerButton: { width: '100%', borderWidth: 1.5, borderRadius: 12, padding: 12, alignItems: 'center', marginBottom: 12, backgroundColor: '#F8FAFC' },
+  label: { fontSize: 13, fontWeight: '700' },
+  modalInput: { width: '100%', borderWidth: 1.5, borderRadius: 12, padding: 12, minHeight: 80, textAlignVertical: 'top', fontSize: 15, marginTop: 6 },
+  modalButton: { width: '100%', padding: 12, borderRadius: 12, alignItems: 'center', marginTop: 12 },
+  modalButtonText: { color: '#FFF', fontWeight: '800' },
   detalleHeaderTitle: { fontSize: 22, fontWeight: '800', marginTop: 8 },
   detalleCloseButton: { position: 'absolute', top: 8, right: 10, padding: 8 },
   detalleSection: { marginBottom: 18 },

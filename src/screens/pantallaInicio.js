@@ -1,6 +1,9 @@
-// Pantalla principal de bienvenida y login: Flujo secuencial minimalista para SIPSAPS.
-// Vista 1: Bienvenida profesional con checkbox. Vista 2: Login elegante como catálogo con inputs activos.
-// Optimizado para futuro: Integración API y persistencia. Colores indigo dinámicos. Case-insensitive login.
+// src/screens/pantallaInicio.js
+// Pantalla principal de bienvenida y login (mejorada):
+// - Forzada a tema claro (no depende del modo del sistema).
+// - Responsive para pantallas muy compactas (<=360px).
+// - Iconos y botones reducidos en compact.
+// - Espaciados y tamaños ajustados para mejor UX en móviles pequeños.
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -11,8 +14,10 @@ import {
   Alert,
   Image,
   TextInput,
+  Dimensions,
+  Platform,
 } from 'react-native';
-import { FontAwesome } from '@expo/vector-icons'; // Iconos para inputs y botón.
+import { FontAwesome } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
@@ -21,52 +26,65 @@ import Animated, {
   withTiming,
   Easing,
 } from 'react-native-reanimated';
-import AsyncStorage from '@react-native-async-storage/async-storage'; // Para persistencia futura.
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import BotonPrincipal from '../components/botonPrincipal';
 import IndicadorCarga from '../components/indicadorCarga';
-import ModalGeneral from '../components/modalGeneral'; // Modal para backend errors.
+import ModalGeneral from '../components/modalGeneral';
 import { useTemasPersonalizado } from '../hooks/useTemasPersonalizado';
 import { useManejoCarga } from '../hooks/useManejoCarga';
-import api from '../utils/api'; // API conexión.
+import api from '../utils/api';
 import { useDispatch } from 'react-redux';
-import { setUser } from '../redux/slices/userSlice'; // Redux user.
-import { validarLogin } from '../utils/validator'; // Validación dinámica.
+import { setUser } from '../redux/slices/userSlice';
+import { validarLogin } from '../utils/validator';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const COMPACT = SCREEN_WIDTH <= 360; // breakpoint para teléfonos muy compactos
+const H_PADDING = COMPACT ? 12 : 40;
+const LOGO_SIZE = COMPACT ? 56 : 80;
+const ICON_SMALL = COMPACT ? 16 : 18;
+const INPUT_HEIGHT = COMPACT ? 42 : 52;
 
 export default function PantallaInicio() {
-  const dispatch = useDispatch(); // Para Redux.
+  const dispatch = useDispatch();
   const insets = useSafeAreaInsets();
 
+  // useTemasPersonalizado ya está forzado a tema claro en el hook.
   const tema = useTemasPersonalizado() || {};
   const {
-    colores = {}, // Usar un objeto vacío como fallback para 'colores'
-    fuentes = {}, // Usar un objeto vacío como fallback para 'fuentes'
-    espaciados = {},
+    colores = {
+      principal: '#4F46E5',
+      secundario: '#7C3AED',
+      fondo: '#F8FAFC',
+      superficie: '#FFFFFF',
+      textoPrincipal: '#1E293B',
+      textoSecundario: '#64748B',
+      error: '#FF3B30',
+    },
+    fuentes = {
+      regular: 'System',
+      negrita: 'System',
+      tamanos: { pequeno: 12, medio: 16, grande: 20, titulo: 28 },
+    },
+    espaciados = { pequeno: 8, medio: 16, grande: 24, extraGrande: 32 },
     sombras = {},
   } = tema;
 
   const { estaCargando, ejecutarConCarga } = useManejoCarga(false);
 
-  // Estados generales: Vista actual, checkbox no mostrar bienvenida.
-  const [vistaActual, setVistaActual] = useState('bienvenida'); // 'bienvenida' o 'login'.
+  const [vistaActual, setVistaActual] = useState('bienvenida');
   const [noMostrarBienvenida, setNoMostrarBienvenida] = useState(false);
 
-  // Estados para login (activos para escribir).
-  const [email, setEmail] = useState(''); // UsernameOrEmail.
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [errorsInput, setErrorsInput] = useState({});
 
-  // Estados para validación dinámica.
-  const [errorsInput, setErrorsInput] = useState({}); // { email: 'msg', password: 'msg' }.
-
-  // Estados para modal backend errors.
   const [modalVisible, setModalVisible] = useState(false);
   const [modalType, setModalType] = useState('error');
   const [modalMessage, setModalMessage] = useState('');
 
-  // Animación fade: Shared values específicas por vista.
   const opacidadBienvenida = useSharedValue(1);
   const opacidadLogin = useSharedValue(0);
 
-  // Cargar preferencia checkbox al montar (persistente).
   useEffect(() => {
     const cargarPreferencia = async () => {
       try {
@@ -84,7 +102,6 @@ export default function PantallaInicio() {
     cargarPreferencia();
   }, []);
 
-  // Validación dinámica por campo (onBlur/onChange).
   const validarInput = (campo, value) => {
     const errors = validarLogin(
       campo === 'email' ? value : email,
@@ -97,18 +114,10 @@ export default function PantallaInicio() {
   const onBlurPassword = () => validarInput('password', password);
 
   const manejarContinuar = async () => {
-    // Fade out bienvenida, fade in login.
-    opacidadBienvenida.value = withTiming(0, {
-      duration: 400,
-      easing: Easing.out(Easing.ease),
-    });
-    opacidadLogin.value = withTiming(1, {
-      duration: 400,
-      easing: Easing.out(Easing.ease),
-    });
+    opacidadBienvenida.value = withTiming(0, { duration: 320, easing: Easing.out(Easing.ease) });
+    opacidadLogin.value = withTiming(1, { duration: 320, easing: Easing.out(Easing.ease) });
     setVistaActual('login');
 
-    // Guardar preferencia si checkbox marcado.
     if (noMostrarBienvenida) {
       try {
         await AsyncStorage.setItem('noMostrarBienvenida', 'true');
@@ -119,290 +128,156 @@ export default function PantallaInicio() {
   };
 
   const manejarLogin = async () => {
-    // Validación global antes de API.
     const errors = validarLogin(email, password);
     if (Object.keys(errors).length > 0) {
-      setErrorsInput(errors); // Muestra spans.
+      setErrorsInput(errors);
       return;
     }
 
-    // Lowercase para case-insensitive (username/email).
-    const usernameOrEmailLower = email.toLowerCase().trim(); // Trim para espacios.
+    const usernameOrEmailLower = email.toLowerCase().trim();
 
     try {
       await ejecutarConCarga(async () => {
         const result = await api.post('/auth/login', {
-          usernameOrEmail: usernameOrEmailLower, // Envía lower para backend ILIKE.
+          usernameOrEmail: usernameOrEmailLower,
           password,
         });
-        // Guarda en Redux y AsyncStorage.
-        dispatch(setUser(result)); // AppNavigator cambiará a MainApp al observar isAuthenticated=true
+        dispatch(setUser(result));
         await AsyncStorage.setItem('jwt', result.token);
         await AsyncStorage.setItem('user', JSON.stringify(result.user));
-        // Corrección recomendada: no navegar manualmente; AppNavigator conmuta automáticamente.
       });
     } catch (error) {
-      // Backend errors en modal (e.g., 401 "Credenciales incorrectas").
       setModalType('error');
       setModalMessage(
-        error.message.includes('401')
+        (error?.message || '').includes('401')
           ? 'Credenciales incorrectas. Verifica usuario/contraseña.'
-          : 'Error al iniciar sesión. Intenta de nuevo.'
+          : 'Error al iniciar sesión. Intenta nuevamente.'
       );
       setModalVisible(true);
     }
   };
 
-  // Estilos animados específicos.
-  const estiloBienvenida = useAnimatedStyle(() => ({
-    opacity: opacidadBienvenida.value,
-  }));
-  const estiloLogin = useAnimatedStyle(() => ({
-    opacity: opacidadLogin.value,
-  }));
+  const estiloBienvenida = useAnimatedStyle(() => ({ opacity: opacidadBienvenida.value }));
+  const estiloLogin = useAnimatedStyle(() => ({ opacity: opacidadLogin.value }));
 
-  // Estilos dinámicos: Dentro del componente para acceso a fuentes/colores (scope seguro).
-  const estilos = StyleSheet.create({
-    contenedor: {
-      flex: 1,
-    },
+  const styles = StyleSheet.create({
+    contenedor: { flex: 1 },
     vista: {
       flex: 1,
-      justifyContent: vistaActual === 'login' ? 'flex-start' : 'center', // Sube contenido en login.
+      justifyContent: vistaActual === 'login' ? 'flex-start' : 'center',
       alignItems: 'center',
-      paddingHorizontal: 40,
-      paddingTop: vistaActual === 'login' ? espaciados.extraGrande : 0, // Padding top para centrar arriba en login.
+      paddingHorizontal: H_PADDING,
+      paddingTop: vistaActual === 'login' ? espaciados.extraGrande : 0,
     },
-    logo: {
-      width: 80,
-      height: 80,
-      marginBottom: 30,
-    },
+    logo: { width: LOGO_SIZE, height: LOGO_SIZE, marginBottom: COMPACT ? 18 : 30 },
     titulo: {
       textAlign: 'center',
-      marginBottom: 10,
-      letterSpacing: 1.5,
+      marginBottom: COMPACT ? 8 : 10,
+      letterSpacing: 1.2,
+      fontSize: COMPACT ? 18 : fuentes.tamanos.titulo + 2,
+      fontFamily: fuentes.negrita,
+      color: colores.principal,
     },
     subtitulo: {
-      marginBottom: 40,
-      lineHeight: 22,
-      paddingHorizontal: 20,
-    },
-    checkboxContenedor: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 40,
-    },
-    checkboxTexto: {
-      fontSize: fuentes.tamanos.pequeno,
-      marginLeft: 10,
-    },
-    // Header para login (logo + título alineados).
-    headerLogin: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      width: '100%',
-      marginBottom: 40,
-    },
-    tituloLogin: {
+      marginBottom: COMPACT ? 20 : 40,
+      lineHeight: 20,
+      paddingHorizontal: COMPACT ? 8 : 20,
+      color: colores.textoSecundario,
       textAlign: 'center',
-      letterSpacing: 0.5,
-      fontSize: fuentes.tamanos.grande,
-      fontFamily: fuentes.negrita,
+      fontSize: COMPACT ? 13 : fuentes.tamanos.medio,
     },
+    checkboxContenedor: { flexDirection: 'row', alignItems: 'center', marginBottom: COMPACT ? 20 : 40 },
+    checkboxTexto: { fontSize: COMPACT ? 12 : fuentes.tamanos.pequeno, marginLeft: 10, color: colores.textoSecundario },
+
+    headerLogin: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%', marginBottom: COMPACT ? 16 : 40 },
+    tituloLogin: { textAlign: 'center', letterSpacing: 0.5, fontSize: COMPACT ? 18 : fuentes.tamanos.grande, fontFamily: fuentes.negrita },
+
     formulario: {
       width: '100%',
-      marginBottom: 30,
-      backgroundColor: colores.superficie, // Tarjeta blanca para catálogo.
-      borderRadius: espaciados.medio,
-      padding: espaciados.grande,
-      ...sombras.pequena, // Sombra sutil para profundidad elegante.
+      marginBottom: COMPACT ? 18 : 30,
+      backgroundColor: colores.superficie,
+      borderRadius: COMPACT ? 10 : espaciados.medio,
+      padding: COMPACT ? espaciados.medio : espaciados.grande,
+      ...(sombras?.pequena || {}),
     },
-    campo: {
-      marginBottom: 20,
-    },
+    campo: { marginBottom: COMPACT ? 12 : 20 },
     inputContenedor: {
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: colores.fondo, // Fondo claro para input.
-      borderRadius: espaciados.pequeno,
-      borderWidth: 1.5, // Más visible: Border más grueso.
-      borderColor:
-        errorsInput.email || errorsInput.password
-          ? colores.error
-          : colores.principal + '20', // Rojo si error.
-      paddingHorizontal: espaciados.medio,
-      paddingVertical: espaciados.medio, // Más padding vertical para visibilidad.
+      backgroundColor: colores.fondo,
+      borderRadius: COMPACT ? 8 : espaciados.pequeno,
+      borderWidth: 1.2,
+      borderColor: colores.principal + '20',
+      paddingHorizontal: COMPACT ? 10 : espaciados.medio,
+      height: INPUT_HEIGHT,
     },
-    iconoInput: {
-      marginRight: espaciados.pequeno,
-      color: colores.principal, // Indigo para iconos, más visible.
-    },
-    input: {
-      flex: 1,
-      fontSize: fuentes.tamanos.medio,
-      color: colores.textoPrincipal,
-      fontFamily: fuentes.regular,
-    },
-    label: {
-      fontSize: fuentes.tamanos.pequeno,
-      marginBottom: 5,
-      color: colores.textoSecundario,
-    },
-    errorMensaje: {
-      // Span para error dinámico.
-      fontSize: fuentes.tamanos.pequeno - 2,
-      color: colores.error,
-      marginTop: 5,
-      textAlign: 'left',
-    },
-    link: {
-      fontSize: fuentes.tamanos.pequeno,
-      marginTop: 20,
-      textDecorationLine: 'underline',
-    },
+    iconoInput: { marginRight: COMPACT ? 8 : espaciados.pequeno, color: colores.principal },
+    input: { flex: 1, fontSize: COMPACT ? 14 : fuentes.tamanos.medio, color: colores.textoPrincipal, paddingVertical: 0 },
+    label: { fontSize: COMPACT ? 12 : fuentes.tamanos.pequeno, marginBottom: 6, color: colores.textoSecundario },
+    errorMensaje: { fontSize: COMPACT ? 11 : fuentes.tamanos.pequeno - 2, color: colores.error, marginTop: 6 },
+
+    link: { fontSize: COMPACT ? 13 : fuentes.tamanos.pequeno, marginTop: 14, color: colores.principal, textDecorationLine: 'underline' },
+
+    // Small button spacing (BotonPrincipal should support small prop)
+    botonWrapper: { width: '100%', marginTop: COMPACT ? 8 : 18, marginBottom: COMPACT ? 6 : 12 },
+
+    indicadorCargaWrap: { marginTop: 8 },
   });
 
   return (
-    <LinearGradient
-      colors={[colores.fondo, colores.secundario + '10']} // Degradado indigo sutil.
-      style={[estilos.contenedor, { paddingTop: insets.top }]}
-    >
-      {/* Vista Bienvenida (minimalista, profesional). */}
+    <LinearGradient colors={[colores.fondo, colores.secundario + '08']} style={[styles.contenedor, { paddingTop: insets.top }]}>
       {vistaActual === 'bienvenida' && (
-        <Animated.View style={[estilos.vista, estiloBienvenida]}>
-          {/* Logo centrado. */}
+        <Animated.View style={[styles.vista, estiloBienvenida]}>
           <Image
-            source={require('../assets/imagenes/logo-sipsaps.png')} // Ajusta a tu logo.
-            style={estilos.logo}
-            accessible={true}
+            source={require('../assets/imagenes/logo-sipsaps.png')}
+            style={styles.logo}
+            accessible
             accessibilityLabel="Logo de SIPSAPS"
             resizeMode="contain"
           />
-          {/* Título profesional. */}
-          <Text
-            style={[
-              estilos.titulo,
-              {
-                color: colores.principal, // Indigo vibrante.
-                fontSize: fuentes.tamanos.titulo + 2,
-                fontFamily: fuentes.negrita,
-              },
-            ]}
-            accessible={true}
-            accessibilityRole="header"
-          >
-            Bienvenido a SIPSAPS
+          <Text style={styles.titulo}>Bienvenido a SIPSAPS</Text>
+          <Text style={styles.subtitulo}>
+            Plataforma integral para la gestión eficiente de reservas médicas y seguimiento de pacientes
           </Text>
-          {/* Subtítulo descriptivo (profesional para salud). */}
-          <Text
-            style={[
-              estilos.subtitulo,
-              {
-                color: colores.textoSecundario,
-                fontSize: fuentes.tamanos.medio,
-                textAlign: 'center',
-              },
-            ]}
-          >
-            Plataforma Integral para la Gestión Eficiente de Reservas Médicas y
-            Seguimiento de Pacientes
-          </Text>
-          {/* Checkbox no mostrar más. */}
-          <View style={estilos.checkboxContenedor}>
+
+          <View style={styles.checkboxContenedor}>
             <Switch
               value={noMostrarBienvenida}
               onValueChange={setNoMostrarBienvenida}
-              trackColor={{
-                false: colores.textoSecundario,
-                true: colores.principal,
-              }}
+              trackColor={{ false: colores.textoSecundario, true: colores.principal }}
               thumbColor={noMostrarBienvenida ? '#FFFFFF' : '#F4F3F4'}
-              accessible={true}
               accessibilityLabel="No mostrar esta pantalla nuevamente"
             />
-            <Text
-              style={[
-                estilos.checkboxTexto,
-                { color: colores.textoSecundario },
-              ]}
-            >
-              No mostrar esta pantalla nuevamente
-            </Text>
+            <Text style={styles.checkboxTexto}>No mostrar esta pantalla nuevamente</Text>
           </View>
-          {/* Botón Continuar con ícono. */}
-          <BotonPrincipal
-            titulo="Continuar"
-            onPress={manejarContinuar}
-            iconoNombre="arrow-right"
-          />
+
+          <View style={styles.botonWrapper}>
+            <BotonPrincipal titulo="Continuar" onPress={manejarContinuar} iconoNombre="arrow-right" small={COMPACT} />
+          </View>
         </Animated.View>
       )}
 
-      {/* Vista Login (estática, minimalista como catálogo). */}
       {vistaActual === 'login' && (
-        <Animated.View style={[estilos.vista, estiloLogin]}>
-          {/* Header: Logo alineado izquierda, título centrado. */}
-          <View style={estilos.headerLogin}>
+        <Animated.View style={[styles.vista, estiloLogin]}>
+          <View style={styles.headerLogin}>
             <Image
               source={require('../assets/imagenes/logo-sipsaps.png')}
-              style={{ width: 40, height: 40, marginRight: espaciados.pequeno }}
-              accessible={true}
+              style={{ width: COMPACT ? 36 : 40, height: COMPACT ? 36 : 40, marginRight: 8 }}
+              accessible
               accessibilityLabel="Logo de SIPSAPS"
             />
-            <Text
-              style={[
-                estilos.tituloLogin,
-                { color: colores.principal }, // Indigo para título.
-              ]}
-              accessible={true}
-              accessibilityRole="header"
-            >
-              SIPSAPS
-            </Text>
+            <Text style={styles.tituloLogin}>SIPSAPS</Text>
           </View>
 
-          {/* Título login debajo del header. */}
-          <Text
-            style={[
-              estilos.tituloLogin,
-              {
-                color: colores.textoPrincipal,
-                fontSize: fuentes.tamanos.grande,
-                fontFamily: fuentes.negrita,
-              },
-            ]}
-            accessible={true}
-            accessibilityRole="header"
-          >
-            Iniciar Sesión
-          </Text>
+          <Text style={[styles.tituloLogin, { color: colores.textoPrincipal, marginBottom: COMPACT ? 12 : 20 }]}>Iniciar Sesión</Text>
 
-          {/* Formulario como "catálogo" (tarjeta con sombra, iconos en inputs). */}
-          <View style={estilos.formulario}>
-            {/* Input UsernameOrEmail con icono. */}
-            <View style={estilos.campo}>
-              <Text style={[estilos.label, { color: colores.textoSecundario }]}>
-                Nombre de Usuario o Correo Electrónico
-              </Text>
-              <View
-                style={[
-                  estilos.inputContenedor,
-                  {
-                    borderColor: errorsInput.email
-                      ? colores.error
-                      : colores.principal + '20',
-                  }, // Rojo si error.
-                ]}
-              >
-                <FontAwesome
-                  name="envelope"
-                  size={18}
-                  style={estilos.iconoInput}
-                />
+          <View style={styles.formulario}>
+            <View style={styles.campo}>
+              <Text style={styles.label}>Nombre de Usuario o Correo Electrónico</Text>
+              <View style={[styles.inputContenedor, { borderColor: errorsInput.email ? colores.error : colores.principal + '20' }]}>
+                <FontAwesome name="envelope" size={ICON_SMALL} style={styles.iconoInput} color={colores.principal} />
                 <TextInput
-                  style={estilos.input}
+                  style={styles.input}
                   placeholder="usuario@ejemplo.com"
                   placeholderTextColor={colores.textoSecundario + '60'}
                   value={email}
@@ -412,93 +287,48 @@ export default function PantallaInicio() {
                   autoCorrect={false}
                   returnKeyType="next"
                   blurOnSubmit={false}
-                  accessible={true}
                   accessibilityLabel="Ingresa tu nombre de usuario o email"
-                  onBlur={onBlurEmail} // Validación dinámica.
+                  onBlur={onBlurEmail}
                 />
               </View>
-              {errorsInput.email && (
-                <Text
-                  style={estilos.errorMensaje}
-                  accessible={true}
-                  accessibilityLabel="Error en email"
-                >
-                  {errorsInput.email}
-                </Text>
-              )}
+              {errorsInput.email ? <Text style={styles.errorMensaje}>{errorsInput.email}</Text> : null}
             </View>
-            {/* Input Password con icono. */}
-            <View style={estilos.campo}>
-              <Text style={[estilos.label, { color: colores.textoSecundario }]}>
-                Contraseña
-              </Text>
-              <View
-                style={[
-                  estilos.inputContenedor,
-                  {
-                    borderColor: errorsInput.password
-                      ? colores.error
-                      : colores.principal + '20',
-                  }, // Rojo si error.
-                ]}
-              >
-                <FontAwesome name="lock" size={18} style={estilos.iconoInput} />
+
+            <View style={styles.campo}>
+              <Text style={styles.label}>Contraseña</Text>
+              <View style={[styles.inputContenedor, { borderColor: errorsInput.password ? colores.error : colores.principal + '20' }]}>
+                <FontAwesome name="lock" size={ICON_SMALL} style={styles.iconoInput} color={colores.principal} />
                 <TextInput
-                  style={estilos.input}
+                  style={styles.input}
                   placeholder="********"
                   placeholderTextColor={colores.textoSecundario + '60'}
                   value={password}
                   onChangeText={setPassword}
-                  secureTextEntry={true}
+                  secureTextEntry
                   autoCapitalize="none"
                   returnKeyType="done"
-                  onSubmitEditing={manejarLogin} // Submit al presionar Enter.
-                  accessible={true}
+                  onSubmitEditing={manejarLogin}
                   accessibilityLabel="Ingresa tu contraseña"
-                  onBlur={onBlurPassword} // Validación dinámica.
+                  onBlur={onBlurPassword}
                 />
               </View>
-              {errorsInput.password && (
-                <Text
-                  style={estilos.errorMensaje}
-                  accessible={true}
-                  accessibilityLabel="Error en password"
-                >
-                  {errorsInput.password}
-                </Text>
-              )}
+              {errorsInput.password ? <Text style={styles.errorMensaje}>{errorsInput.password}</Text> : null}
             </View>
           </View>
 
-          {/* Botón Login con ícono. */}
-          <BotonPrincipal
-            titulo="Iniciar Sesión"
-            onPress={manejarLogin}
-            iconoNombre="sign-in"
-          />
+          <View style={styles.botonWrapper}>
+            <BotonPrincipal titulo="Iniciar Sesión" onPress={manejarLogin} iconoNombre="sign-in" small={COMPACT} />
+          </View>
 
-          {/* Link olvidado (futuro). */}
-          <Text style={[estilos.link, { color: colores.principal }]}>
-            ¿Olvidaste tu contraseña?
-          </Text>
+          <Text style={styles.link}>¿Olvidaste tu contraseña?</Text>
 
-          {/* Eliminamos el espacio entre el link y el IndicadorCarga */}
           {estaCargando && (
-            <IndicadorCarga
-              texto="Iniciando sesión..."
-              tamaño="grande"
-              tipo="bloques" // Dinámico indigo.
-            />
+            <View style={styles.indicadorCargaWrap}>
+              <IndicadorCarga texto="Iniciando sesión..." tamaño={COMPACT ? 'mediano' : 'grande'} tipo="bloques" />
+            </View>
           )}
 
-          {/* Modal para backend errors (e.g., credenciales incorrectas). */}
-          <ModalGeneral
-            visible={modalVisible}
-            type={modalType}
-            title={modalType === 'error' ? 'Error' : 'Éxito'}
-            message={modalMessage}
-            onClose={() => setModalVisible(false)}
-          />
+          <ModalGeneral visible={modalVisible} type={modalType} title={modalType === 'error' ? 'Error' : 'Éxito'} message={modalMessage} onClose={() => setModalVisible(false)} />
         </Animated.View>
       )}
     </LinearGradient>

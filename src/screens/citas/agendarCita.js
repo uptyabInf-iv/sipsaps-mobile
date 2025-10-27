@@ -10,6 +10,7 @@ import {
   Pressable,
   Alert,
   Platform,
+  Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -30,8 +31,10 @@ const toISODate = (d) => {
 };
 const isPastDate = (d) => {
   if (!d) return false;
-  const today = new Date(); today.setHours(0,0,0,0);
-  const dd = new Date(d); dd.setHours(0,0,0,0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dd = new Date(d);
+  dd.setHours(0, 0, 0, 0);
   return dd < today;
 };
 const periodOf = (hhmm) => {
@@ -42,23 +45,24 @@ const periodOf = (hhmm) => {
 };
 const fmt12h = (hhmm) => {
   const [H, M] = hhmm.split(':').map((n) => parseInt(n, 10));
-  let h = H % 12; if (h === 0) h = 12;
+  let h = H % 12;
+  if (h === 0) h = 12;
   const ampm = H >= 12 ? 'PM' : 'AM';
-  return `${h}:${String(M).padStart(2,'0')} ${ampm}`;
+  return `${h}:${String(M).padStart(2, '0')} ${ampm}`;
 };
 
-// Input simple con guía
-const Field = ({ label, help, error, children }) => {
-  const { colores } = useTemasPersonalizado();
+// Small responsive Field
+const Field = ({ label, help, error, children, theme }) => {
+  const colores = theme?.colores;
   return (
-    <View style={{ marginBottom: 16 }}>
-      <Text style={{ fontSize: 14, fontWeight: '600', color: colores.textoPrincipal }}>{label}</Text>
-      {help ? <Text style={{ fontSize: 12, color: colores.textoSecundario, marginTop: 2 }}>{help}</Text> : null}
+    <View style={{ marginBottom: 14 }}>
+      <Text style={[styles.fieldLabel, { color: colores.textoPrincipal }]}>{label}</Text>
+      {help ? <Text style={[styles.fieldHelp, { color: colores.textoSecundario }]}>{help}</Text> : null}
       <View style={{ marginTop: 8 }}>{children}</View>
       {error ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+        <View style={styles.fieldErrorRow}>
           <FontAwesome name="exclamation-circle" size={12} color="#DC2626" />
-          <Text style={{ color: '#DC2626', marginLeft: 6, fontSize: 12 }}>{error}</Text>
+          <Text style={styles.fieldErrorText}>{error}</Text>
         </View>
       ) : null}
     </View>
@@ -70,6 +74,11 @@ export default function AgendarCita() {
   const { colores, fuentes } = useTemasPersonalizado();
   const reduxUser = useSelector((s) => s.user?.user);
   const id_persona = reduxUser?.id_persona;
+
+  // Responsive breakpoint
+  const { width: SCREEN_WIDTH } = Dimensions.get('window');
+  const COMPACT = SCREEN_WIDTH <= 360;
+  const H_PAD = COMPACT ? 12 : 20;
 
   // Datos
   const [especialidades, setEspecialidades] = useState([]);
@@ -90,7 +99,7 @@ export default function AgendarCita() {
   const [modalMsg, setModalMsg] = useState({ visible: false, msg: '', type: 'info' });
   const [autoSeleccionAviso, setAutoSeleccionAviso] = useState(false);
 
-  // Opción para proponer un horario manual (fuera de agenda)
+  // Propuesta manual
   const [proponerOtroHorario, setProponerOtroHorario] = useState(false);
   const [horaPropuesta, setHoraPropuesta] = useState(null);
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -98,7 +107,7 @@ export default function AgendarCita() {
   // Errores campo a campo
   const [errors, setErrors] = useState({ especialidad: '', medico: '', fecha: '', slot: '', motivo: '' });
 
-  // Cargar especialidades
+  // Load specialities
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -116,7 +125,7 @@ export default function AgendarCita() {
     return () => (mounted = false);
   }, []);
 
-  // Cuando cambia especialidad, cargar médicos y limpiar dependencias
+  // When specialty changes, load doctors
   useEffect(() => {
     if (!selEspecialidad) return;
     let mounted = true;
@@ -142,7 +151,7 @@ export default function AgendarCita() {
     return () => (mounted = false);
   }, [selEspecialidad]);
 
-  // Disponibilidad: médico + fecha
+  // Availability
   useEffect(() => {
     if (!selMedico || !fecha) return;
     let mounted = true;
@@ -152,7 +161,6 @@ export default function AgendarCita() {
         setSlots([]);
         setSlotSel(null);
         setAutoSeleccionAviso(false);
-        // reset propuesta manual al cambiar fecha/médico
         setProponerOtroHorario(false);
         setHoraPropuesta(null);
 
@@ -174,11 +182,18 @@ export default function AgendarCita() {
     return () => (mounted = false);
   }, [selMedico, fecha]);
 
-  // Validación en tiempo real
+  // Validations
   useEffect(() => setErrors((p) => ({ ...p, especialidad: selEspecialidad ? '' : 'Selecciona una especialidad.' })), [selEspecialidad]);
   useEffect(() => setErrors((p) => ({ ...p, medico: selMedico ? '' : 'Elige al médico de tu preferencia.' })), [selMedico]);
   useEffect(() => setErrors((p) => ({ ...p, fecha: fecha ? '' : 'Selecciona una fecha futura.' })), [fecha]);
-  useEffect(() => setErrors((p) => ({ ...p, slot: (slotSel || horaPropuesta) ? '' : (selMedico && fecha ? 'Selecciona un horario disponible o propone uno manual.' : '') })), [slotSel, horaPropuesta, selMedico, fecha]);
+  useEffect(
+    () =>
+      setErrors((p) => ({
+        ...p,
+        slot: (slotSel || horaPropuesta) ? '' : (selMedico && fecha ? 'Selecciona un horario disponible o propone uno manual.' : ''),
+      })),
+    [slotSel, horaPropuesta, selMedico, fecha]
+  );
   useEffect(() => {
     const clean = (motivo || '').trim();
     let err = '';
@@ -197,7 +212,6 @@ export default function AgendarCita() {
     }
   }, [fecha]);
 
-  // Habilita envío cuando hay slot o propuesta manual
   const puedeEnviar = useMemo(() => {
     const tieneHora = !!(slotSel || horaPropuesta);
     return !!(id_persona && selEspecialidad && selMedico && fecha && tieneHora && !errors.motivo && (motivo || '').trim().length >= 10);
@@ -214,7 +228,7 @@ export default function AgendarCita() {
     return list;
   }, [selEspecialidad, selMedico, fecha, slotSel, horaPropuesta, motivo, id_persona]);
 
-  // Acciones
+  // Actions
   const abrirSelectorEspecialidad = () => setModalLista({ visible: true, tipo: 'especialidad' });
   const abrirSelectorMedico = () => {
     if (!selEspecialidad) {
@@ -246,7 +260,6 @@ export default function AgendarCita() {
     setFecha(n);
   };
 
-  // Buscar primer día con disponibilidad (hasta 30 días hacia adelante)
   const buscarPrimerDiaConDisponibilidad = useCallback(async () => {
     if (!selMedico) {
       setModalMsg({ visible: true, msg: 'Primero elige un médico.', type: 'info' });
@@ -280,15 +293,14 @@ export default function AgendarCita() {
     }
   }, [selMedico, fecha]);
 
-  // Time picker para propuesta manual
   const onChangeHoraPropuesta = (event, selectedDate) => {
     if (Platform.OS !== 'ios') setShowTimePicker(false);
     if (event?.type === 'dismissed') return;
     const d = selectedDate || new Date();
-    const hh = String(d.getHours()).padStart(2,'0');
-    const mm = String(d.getMinutes()).padStart(2,'0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
     setHoraPropuesta(`${hh}:${mm}`);
-    setSlotSel(null); // deselecciona slot si propone manual
+    setSlotSel(null);
   };
 
   const enviar = async () => {
@@ -302,14 +314,14 @@ export default function AgendarCita() {
       const payload = {
         id_medico: selMedico.id_medico,
         fecha: toISODate(fecha),
-        hora: horaEnviar, // HH:mm
+        hora: horaEnviar,
         detalles: (motivo || '').trim(),
-        allow_out_of_schedule: !!horaPropuesta, // true si es propuesta manual
+        allow_out_of_schedule: !!horaPropuesta,
       };
       await api.post('/citas', payload);
       setModalMsg({ visible: true, msg: 'Tu cita fue solicitada como Pendiente. El médico revisará el horario propuesto.', type: 'success' });
 
-      // Reset cómodo (mantenemos especialidad por UX si quieres, aquí limpiamos todo)
+      // Reset cómodo
       setSelMedico(null);
       setFecha(null);
       setSlots([]);
@@ -325,80 +337,60 @@ export default function AgendarCita() {
     }
   };
 
-  // Grupos de slots por periodo
+  // Slots grouped by period
   const slotsPorPeriodo = useMemo(() => {
     const map = { Mañana: [], Tarde: [], Noche: [] };
     for (const s of slots) map[periodOf(s)].push(s);
     return map;
   }, [slots]);
 
+  // --- Render ---
   return (
     <View style={[styles.container, { backgroundColor: colores.fondo, paddingTop: insets.top }]}>
-      <ScrollView contentContainerStyle={{ padding: 20 }}>
-        <Text style={[styles.headerTitle, { color: colores.textoPrincipal, fontSize: fuentes.tamanos?.titulo || 24 }]}>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: H_PAD, paddingTop: 20, paddingBottom: Math.max(insets.bottom + 120, 160) }}>
+        <Text style={[styles.headerTitle, { color: colores.textoPrincipal, fontSize: COMPACT ? 18 : fuentes.tamanos?.titulo || 24 }]}>
           Agendar Nueva Cita
         </Text>
 
-        {/* Paso 1: Especialidad */}
-        <Field
-          label="1. Especialidad"
-          help="¿Con qué especialidad necesitas atención? Puedes cambiarla en cualquier momento."
-          error={errors.especialidad}
-        >
-          <TouchableOpacity
-            onPress={abrirSelectorEspecialidad}
-            style={[styles.selector, { borderColor: errors.especialidad ? '#DC2626' : '#E5E5E7', backgroundColor: '#F2F2F7' }]}
-          >
-            <FontAwesome name="stethoscope" size={16} color={colores.textoSecundario} />
+        {/* 1. Especialidad */}
+        <Field label="1. Especialidad" help="¿Con qué especialidad necesitas atención?" error={errors.especialidad} theme={{ colores }}>
+          <TouchableOpacity onPress={abrirSelectorEspecialidad} style={[styles.selector, { borderColor: errors.especialidad ? '#DC2626' : '#E5E5E7', backgroundColor: '#F2F2F7', height: COMPACT ? 44 : 48 }]}>
+            <FontAwesome name="stethoscope" size={COMPACT ? 14 : 16} color={colores.textoSecundario} />
             <Text style={[styles.selectorText, { color: selEspecialidad ? colores.textoPrincipal : colores.textoSecundario }]}>
               {selEspecialidad?.especialidad_nombre || 'Selecciona especialidad'}
             </Text>
-            <FontAwesome name="chevron-down" size={14} color={colores.textoSecundario} />
+            <FontAwesome name="chevron-down" size={COMPACT ? 12 : 14} color={colores.textoSecundario} />
           </TouchableOpacity>
         </Field>
 
-        {/* Paso 2: Médico */}
-        <Field
-          label="2. Médico de preferencia"
-          help="Te mostraremos los médicos disponibles de esta especialidad."
-          error={errors.medico}
-        >
-          <TouchableOpacity
-            onPress={abrirSelectorMedico}
-            style={[styles.selector, { borderColor: errors.medico ? '#DC2626' : '#E5E5E7', backgroundColor: '#F2F2F7' }]}
-          >
-            <FontAwesome name="user-md" size={16} color={colores.textoSecundario} />
+        {/* 2. Médico */}
+        <Field label="2. Médico de preferencia" help="Te mostraremos los médicos disponibles." error={errors.medico} theme={{ colores }}>
+          <TouchableOpacity onPress={abrirSelectorMedico} style={[styles.selector, { borderColor: errors.medico ? '#DC2626' : '#E5E5E7', backgroundColor: '#F2F2F7', height: COMPACT ? 44 : 48 }]}>
+            <FontAwesome name="user-md" size={COMPACT ? 14 : 16} color={colores.textoSecundario} />
             <Text style={[styles.selectorText, { color: selMedico ? colores.textoPrincipal : colores.textoSecundario }]}>
               {selMedico?.nombre_completo || selMedico?.nombre || 'Selecciona médico'}
             </Text>
-            <FontAwesome name="chevron-down" size={14} color={colores.textoSecundario} />
+            <FontAwesome name="chevron-down" size={COMPACT ? 12 : 14} color={colores.textoSecundario} />
           </TouchableOpacity>
         </Field>
 
-        {/* Paso 3: Fecha */}
-        <Field
-          label="3. Fecha"
-          help="Elige el día de tu preferencia. Luego verás los horarios disponibles para ese día."
-          error={errors.fecha}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <TouchableOpacity onPress={() => moverDia(-1)} style={[styles.smallBtn, { borderColor: '#E5E5E7' }]}>
-              <FontAwesome name="chevron-left" size={12} color={colores.textoSecundario} />
-              <Text style={{ marginLeft: 6, color: colores.textoSecundario }}>Anterior</Text>
+        {/* 3. Fecha */}
+        <Field label="3. Fecha" help="Elige el día de tu preferencia." error={errors.fecha} theme={{ colores }}>
+          <View style={[styles.row, { gap: 8 }]}>
+            <TouchableOpacity onPress={() => moverDia(-1)} style={[styles.smallBtn, { borderColor: '#E5E5E7', height: COMPACT ? 36 : 40 }]}>
+              <FontAwesome name="chevron-left" size={COMPACT ? 10 : 12} color={colores.textoSecundario} />
             </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setShowDatePicker(true)}
-              style={[styles.selector, { flex: 1, borderColor: errors.fecha ? '#DC2626' : '#E5E5E7', backgroundColor: '#F2F2F7' }]}
-            >
-              <FontAwesome name="calendar" size={16} color={colores.textoSecundario} />
+
+            <TouchableOpacity onPress={() => setShowDatePicker(true)} style={[styles.selector, { flex: 1, borderColor: errors.fecha ? '#DC2626' : '#E5E5E7', backgroundColor: '#F2F2F7', height: COMPACT ? 44 : 48 }]}>
+              <FontAwesome name="calendar" size={COMPACT ? 14 : 16} color={colores.textoSecundario} />
               <Text style={[styles.selectorText, { color: fecha ? colores.textoPrincipal : colores.textoSecundario }]}>
                 {fecha ? fechaLegible : 'Seleccionar fecha'}
               </Text>
-              <FontAwesome name="chevron-down" size={14} color={colores.textoSecundario} />
+              <FontAwesome name="chevron-down" size={COMPACT ? 12 : 14} color={colores.textoSecundario} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => moverDia(1)} style={[styles.smallBtn, { borderColor: '#E5E5E7' }]}>
-              <Text style={{ marginRight: 6, color: colores.textoSecundario }}>Siguiente</Text>
-              <FontAwesome name="chevron-right" size={12} color={colores.textoSecundario} />
+
+            <TouchableOpacity onPress={() => moverDia(1)} style={[styles.smallBtn, { borderColor: '#E5E5E7', height: COMPACT ? 36 : 40 }]}>
+              <FontAwesome name="chevron-right" size={COMPACT ? 10 : 12} color={colores.textoSecundario} />
             </TouchableOpacity>
           </View>
 
@@ -413,72 +405,55 @@ export default function AgendarCita() {
           )}
         </Field>
 
-        {/* Paso 4: Horario disponible / Propuesta manual */}
+        {/* 4. Horario */}
         <Field
           label="4. Horario"
-          help={
-            selMedico && fecha
-              ? 'Selecciona la hora disponible o propone una hora manual. Si no hay horarios, usa el buscador.'
-              : 'Primero elige médico y fecha para ver horarios.'
-          }
+          help={selMedico && fecha ? 'Selecciona la hora disponible o propone una hora manual.' : 'Primero elige médico y fecha para ver horarios.'}
           error={errors.slot}
+          theme={{ colores }}
         >
           <View style={{ gap: 8 }}>
-            <TouchableOpacity
-              onPress={buscarPrimerDiaConDisponibilidad}
-              style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: colores.principal }}
-            >
-              <FontAwesome name="search" size={14} color={colores.principal} />
-              <Text style={{ marginLeft: 8, color: colores.principal, fontWeight: '700' }}>Buscar primer día con disponibilidad</Text>
+            <TouchableOpacity onPress={buscarPrimerDiaConDisponibilidad} style={[styles.actionPrimary, { alignSelf: 'flex-start' }]}>
+              <FontAwesome name="search" size={COMPACT ? 14 : 16} color={colores.principal} />
+              <Text style={[styles.actionPrimaryText, { color: colores.principal }]}>Buscar primer día con disponibilidad</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={() => { setProponerOtroHorario(!proponerOtroHorario); if (!proponerOtroHorario) setShowTimePicker(true); }}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
-            >
-              <FontAwesome name={proponerOtroHorario ? 'toggle-on' : 'toggle-off'} size={22} color={colores.principal} />
-              <Text style={{ color: colores.textoPrincipal, fontWeight: '700' }}>
+            <TouchableOpacity onPress={() => { setProponerOtroHorario(!proponerOtroHorario); if (!proponerOtroHorario) setShowTimePicker(true); }} style={styles.row}>
+              <FontAwesome name={proponerOtroHorario ? 'toggle-on' : 'toggle-off'} size={COMPACT ? 20 : 22} color={colores.principal} />
+              <Text style={{ marginLeft: 8, color: colores.textoPrincipal, fontWeight: '700' }}>
                 {proponerOtroHorario ? 'Proponer otro horario (activado)' : 'Proponer otro horario'}
               </Text>
             </TouchableOpacity>
 
             {proponerOtroHorario && (
               <View>
-                <TouchableOpacity
-                  onPress={() => setShowTimePicker(true)}
-                  style={{ marginTop: 8, alignSelf: 'flex-start', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E5E5E7', flexDirection:'row', alignItems:'center' }}
-                >
-                  <FontAwesome name="clock-o" size={14} color={colores.textoSecundario} />
-                  <Text style={{ marginLeft: 8, color: colores.textoPrincipal, fontWeight: '700' }}>
+                <TouchableOpacity onPress={() => setShowTimePicker(true)} style={[styles.selector, { marginTop: 8, alignSelf: 'flex-start', height: COMPACT ? 44 : 48, backgroundColor: '#fff' }]}>
+                  <FontAwesome name="clock-o" size={COMPACT ? 14 : 16} color={colores.textoSecundario} />
+                  <Text style={[styles.selectorText, { color: horaPropuesta ? colores.textoPrincipal : colores.textoSecundario }]}>
                     {horaPropuesta ? `Propuesto: ${fmt12h(horaPropuesta)}` : 'Seleccionar hora'}
                   </Text>
                 </TouchableOpacity>
 
                 {showTimePicker && (
-                  <DateTimePicker
-                    value={new Date()}
-                    mode="time"
-                    display={Platform.OS === 'ios' ? 'spinner' : 'clock'}
-                    onChange={onChangeHoraPropuesta}
-                  />
+                  <DateTimePicker value={new Date()} mode="time" display={Platform.OS === 'ios' ? 'spinner' : 'clock'} onChange={onChangeHoraPropuesta} />
                 )}
-                <Text style={{ marginTop: 6, fontSize: 12, color: colores.textoSecundario }}>
+                <Text style={[styles.smallHelp, { color: colores.textoSecundario }]}>
                   Esta hora puede estar fuera de la agenda del médico; él podrá aprobarla, reprogramarla o rechazarla.
                 </Text>
               </View>
             )}
 
-            {/* Chips de slots disponibles */}
+            {/* Slots */}
             {slots.length === 0 ? (
-              <Text style={{ color: colores.textoSecundario }}>
+              <Text style={[styles.smallHelp, { color: colores.textoSecundario }]}>
                 {selMedico && fecha ? 'No hay horarios para esta fecha. Prueba otro día, busca disponibilidad o propone tu hora.' : 'Aún no hay horarios que mostrar.'}
               </Text>
             ) : (
               ['Mañana', 'Tarde', 'Noche'].map((p) =>
                 (slotsPorPeriodo[p] || []).length ? (
                   <View key={p} style={{ marginBottom: 10 }}>
-                    <Text style={{ fontSize: 12, color: colores.textoSecundario, marginBottom: 6 }}>{p}</Text>
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    <Text style={[styles.periodLabel, { color: colores.textoSecundario }]}>{p}</Text>
+                    <View style={[styles.slotsWrap, COMPACT ? styles.slotsWrapCompact : null]}>
                       {slotsPorPeriodo[p].map((h) => {
                         const active = slotSel === h;
                         return (
@@ -487,10 +462,11 @@ export default function AgendarCita() {
                             onPress={() => { setSlotSel(h); setProponerOtroHorario(false); setHoraPropuesta(null); }}
                             style={[
                               styles.slotBtn,
+                              COMPACT ? styles.slotBtnCompact : null,
                               { borderColor: active ? colores.principal : '#E5E5E7', backgroundColor: active ? colores.principal + '15' : 'transparent' },
                             ]}
                           >
-                            <Text style={{ color: active ? colores.principal : colores.textoPrincipal, fontWeight: '700' }}>
+                            <Text style={[styles.slotBtnText, { color: active ? colores.principal : colores.textoPrincipal }]}>
                               {fmt12h(h)}
                             </Text>
                           </TouchableOpacity>
@@ -503,9 +479,9 @@ export default function AgendarCita() {
             )}
 
             {autoSeleccionAviso && slotSel ? (
-              <View style={styles.infoBanner}>
+              <View style={[styles.infoBanner, { backgroundColor: '#DBEAFE' }]}>
                 <FontAwesome name="lightbulb-o" size={14} color="#2563EB" />
-                <Text style={styles.infoBannerText}>
+                <Text style={[styles.infoBannerText, { color: '#1E3A8A' }]}>
                   Seleccionamos por ti {fmt12h(slotSel)} como primer horario disponible. Puedes escoger otro o proponer tu hora.
                 </Text>
               </View>
@@ -513,20 +489,16 @@ export default function AgendarCita() {
           </View>
         </Field>
 
-        {/* Paso 5: Motivo */}
-        <Field
-          label="5. Motivo de la consulta"
-          help="Sé breve y claro. Ejemplo: “Dolor en el pecho desde hace 2 días” o “Control de presión”."
-          error={errors.motivo}
-        >
+        {/* 5. Motivo */}
+        <Field label="5. Motivo de la consulta" help="Sé breve y claro." error={errors.motivo} theme={{ colores }}>
           <View style={[styles.textArea, { borderColor: errors.motivo ? '#DC2626' : '#E5E5E7', backgroundColor: '#F2F2F7' }]}>
-            <FontAwesome name="commenting-o" size={16} color={colores.textoSecundario} style={{ marginRight: 8 }} />
+            <FontAwesome name="commenting-o" size={COMPACT ? 14 : 16} color={colores.textoSecundario} style={{ marginRight: 8 }} />
             <TextInput
               value={motivo}
               onChangeText={setMotivo}
               placeholder="Escribe aquí el motivo..."
               placeholderTextColor={colores.textoSecundario + '80'}
-              style={{ flex: 1, minHeight: 90, textAlignVertical: 'top', color: colores.textoPrincipal }}
+              style={[styles.textInputArea, { color: colores.textoPrincipal }]}
               multiline
               maxLength={1000}
             />
@@ -534,19 +506,19 @@ export default function AgendarCita() {
         </Field>
 
         {!puedeEnviar && (
-          <View style={styles.hintsBox}>
+          <View style={[styles.hintsBox, { backgroundColor: '#E0F2FE' }]}>
             <FontAwesome name="info-circle" size={14} color="#0EA5E9" />
             <View style={{ marginLeft: 8 }}>
               <Text style={{ color: colores.textoPrincipal, fontWeight: '700' }}>Te faltan estos pasos:</Text>
               {razonesDesactivado.map((r) => (
-                <Text key={r} style={{ color: colores.textoSecundario, marginTop: 2 }}>• {r}</Text>
+                <Text key={r} style={{ color: colores.textoSecundario, marginTop: 2, fontSize: COMPACT ? 12 : 14 }}>• {r}</Text>
               ))}
             </View>
           </View>
         )}
 
         <TouchableOpacity
-          style={[styles.submitButton, { backgroundColor: puedeEnviar ? colores.principal : '#9CA3AF' }]}
+          style={[styles.submitButton, { backgroundColor: puedeEnviar ? colores.principal : '#9CA3AF', marginBottom: COMPACT ? 24 : 36 }]}
           onPress={enviar}
           disabled={!puedeEnviar || loading}
           testID="btn-confirmar-cita"
@@ -555,28 +527,23 @@ export default function AgendarCita() {
         </TouchableOpacity>
       </ScrollView>
 
-      {/* Modal de selección (especialidades / médicos) */}
-      <Modal
-        visible={modalLista.visible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setModalLista({ visible: false, tipo: null })}
-      >
+      {/* Selector modal */}
+      <Modal visible={modalLista.visible} transparent animationType="fade" onRequestClose={() => setModalLista({ visible: false, tipo: null })}>
         <Pressable style={styles.modalBackdrop} onPress={() => setModalLista({ visible: false, tipo: null })}>
-          <Pressable style={[styles.modalCard, { backgroundColor: colores.superficie }]} onPress={() => {}}>
+          <Pressable style={[styles.modalCard, { backgroundColor: colores.superficie, maxWidth: COMPACT ? '94%' : 420 }]} onPress={() => {}}>
             <Text style={[styles.modalTitle, { color: colores.textoPrincipal }]}>
               {modalLista.tipo === 'especialidad' ? 'Selecciona Especialidad' : 'Selecciona Médico'}
             </Text>
-            <ScrollView style={{ maxHeight: 360 }}>
+            <ScrollView style={{ maxHeight: COMPACT ? 300 : 360 }}>
               {(modalLista.tipo === 'especialidad' ? especialidades : medicos).map((item) => (
                 <Pressable
                   key={modalLista.tipo === 'especialidad' ? item.id_especialidad : item.id_medico}
                   onPress={() =>
                     modalLista.tipo === 'especialidad' ? onSelectEspecialidad(item) : onSelectMedico(item)
                   }
-                  style={styles.modalOption}
+                  style={[styles.modalOption, { borderBottomColor: '#E5E5E5' }]}
                 >
-                  <Text style={{ color: colores.textoPrincipal, fontWeight: '600' }}>
+                  <Text style={{ color: colores.textoPrincipal, fontWeight: '600', fontSize: COMPACT ? 14 : 16 }}>
                     {modalLista.tipo === 'especialidad'
                       ? item.especialidad_nombre
                       : item.nombre_completo || `${item.nombre || ''} ${item.apellido || ''}`.trim()}
@@ -591,51 +558,114 @@ export default function AgendarCita() {
         </Pressable>
       </Modal>
 
-      {/* Mensajes simples */}
-      <ModalGeneral
-        visible={modalMsg.visible}
-        type={modalMsg.type}
-        message={modalMsg.msg}
-        onClose={() => setModalMsg({ visible: false, msg: '', type: 'info' })}
-      />
+      {/* Simple messages */}
+      <ModalGeneral visible={modalMsg.visible} type={modalMsg.type} message={modalMsg.msg} onClose={() => setModalMsg({ visible: false, msg: '', type: 'info' })} />
 
-      {loading && (
-        <IndicadorCarga
-          visible
-          texto="Cargando..."
-          tamaño="grande"
-          tipo="bloques"
-        />
-      )}
+      {loading && <IndicadorCarga visible texto="Cargando..." tamaño="grande" tipo="bloques" />}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  headerTitle: { fontWeight: '800', marginBottom: 16 },
+  headerTitle: { fontWeight: '800', marginBottom: 12 },
+
+  // Fields
+  fieldLabel: { fontSize: 14, fontWeight: '700' },
+  fieldHelp: { fontSize: 12, marginTop: 4 },
+  fieldErrorRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
+  fieldErrorText: { color: '#DC2626', marginLeft: 6, fontSize: 12 },
+
+  // Selectors
   selector: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, height: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
   },
-  selectorText: { flex: 1, marginHorizontal: 10, fontSize: 16 },
+  selectorText: { flex: 1, marginHorizontal: 10, fontSize: 15 },
+
+  row: { flexDirection: 'row', alignItems: 'center' },
+
   smallBtn: {
-    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, height: 40,
-    borderWidth: 1, borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    height: 40,
+    borderWidth: 1,
+    borderRadius: 10,
+    justifyContent: 'center',
   },
-  slotBtn: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, borderWidth: 1.5 },
-  textArea: { flexDirection: 'row', alignItems: 'flex-start', borderWidth: 1, borderRadius: 12, padding: 10 },
-  submitButton: { marginTop: 16, padding: 16, borderRadius: 12, alignItems: 'center' },
-  submitButtonText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+
+  actionPrimary: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E5E7',
+  },
+  actionPrimaryText: { marginLeft: 8, fontWeight: '700' },
+
+  // Slots
+  slotsWrap: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 6 },
+  slotsWrapCompact: { justifyContent: 'flex-start' },
+  slotBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  slotBtnCompact: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    minWidth: 84,
+  },
+  slotBtnText: { fontWeight: '700' },
+
+  periodLabel: { fontSize: 12, marginBottom: 6 },
+
+  // Text area
+  textArea: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 10,
+  },
+  textInputArea: { flex: 1, minHeight: 90, textAlignVertical: 'top', fontSize: 14 },
+
+  // Hints and info
   hintsBox: {
-    flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#E0F2FE', borderRadius: 12,
-    padding: 10, marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#E0F2FE',
+    borderRadius: 12,
+    padding: 10,
+    marginTop: 8,
   },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  smallHelp: { marginTop: 6, fontSize: 12 },
+
+  infoBanner: { flexDirection: 'row', alignItems: 'center', padding: 8, borderRadius: 8, marginTop: 8 },
+  infoBannerText: { marginLeft: 8, fontSize: 12, flex: 1 },
+
+  // Submit
+  submitButton: { marginTop: 16, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+  submitButtonText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+
+  // Modal
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 12 },
   modalCard: { width: '100%', maxWidth: 420, borderRadius: 12, padding: 16 },
   modalTitle: { fontSize: 16, fontWeight: '800', marginBottom: 8 },
   modalOption: { paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E5E5E5' },
   modalClose: { alignSelf: 'flex-end', marginTop: 10, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: '#E5E5E5' },
-  infoBanner: { flexDirection: 'row', alignItems: 'center', padding: 8, backgroundColor: '#DBEAFE', borderRadius: 8, marginTop: 8 },
-  infoBannerText: { marginLeft: 8, color: '#1E3A8A', fontSize: 12, flex: 1 },
+
+  // Misc
+  reloadButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1 },
 });

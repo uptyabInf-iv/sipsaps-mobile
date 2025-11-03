@@ -1,3 +1,16 @@
+// src/components/citas/apartado-medico/GestionCitasMedico.js
+// Correcciones:
+// - Se integra DateTimePicker para permitir al médico elegir fecha al reprogramar.
+// - Manejo cross-platform: en Android mostramos picker temporalmente y lo cerramos al elegir/dismiss,
+//   en iOS permitimos mantenerlo visible (si quiere usar modo spinner).
+// - Conserva selects de hora mediante ModalHorario (lista de horas).
+// - Validaciones previas a enviar reprogramación (fecha pasada, solapamiento).
+// - Normalización, mapeo y UI sin tocar la lógica de backend (endpoints existentes).
+//
+// Nota: requiere @react-native-community/datetimepicker instalado y linkeado si no está.
+// npm install @react-native-community/datetimepicker --save
+// o yarn add @react-native-community/datetimepicker
+
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   View,
@@ -13,6 +26,7 @@ import {
   Dimensions,
   Platform,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FontAwesome } from '@expo/vector-icons';
@@ -102,6 +116,8 @@ export default function GestionCitasMedico() {
   const [fechaCita, setFechaCita] = useState(new Date());
   const [horaInicio, setHoraInicio] = useState('09:00');
   const [horaFin, setHoraFin] = useState('09:30');
+
+  // showDatePicker controla visibilidad del DateTimePicker nativo
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -240,9 +256,21 @@ export default function GestionCitasMedico() {
             )
           : ''
       );
-      setFechaCita(new Date(citaSeleccionada?.fechaSolicitud || Date.now()));
-      setHoraInicio('09:00');
-      setHoraFin('09:30');
+      // presetear fecha y hora según la cita actual
+      setFechaCita(citaSeleccionada?.fechaSolicitud ? new Date(citaSeleccionada.fechaSolicitud) : new Date());
+      // si cita.hora existe en formato HH:MM:SS o HH:MM
+      if (citaSeleccionada?.hora) {
+        const hhmm = String(citaSeleccionada.hora).slice(0,5);
+        setHoraInicio(hhmm);
+        // default duration 30 min
+        const [h, m] = hhmm.split(':').map(Number);
+        const end = new Date();
+        end.setHours(h, m + 30, 0, 0);
+        setHoraFin(`${String(end.getHours()).padStart(2,'0')}:${String(end.getMinutes()).padStart(2,'0')}`);
+      } else {
+        setHoraInicio('09:00');
+        setHoraFin('09:30');
+      }
       setModalAccionVisible(false);
       setModalGestionVisible(true);
     },
@@ -261,11 +289,24 @@ export default function GestionCitasMedico() {
     setModalEstatusVisible(false);
     setModalDetalleVisible(false);
     setModalHorarioVisible({ visible: false, tipo: 'inicio' });
+    setShowDatePicker(false);
   }, []);
 
   const abrirHorario = useCallback((tipo) => {
     setModalHorarioVisible({ visible: true, tipo });
   }, []);
+
+  // Handler para DateTimePicker (fecha)
+  const onChangeFechaPicker = useCallback((event, selectedDate) => {
+    // On Android the event has type 'dismissed' when user cancels
+    if (event && event.type === 'dismissed') {
+      setShowDatePicker(false);
+      return;
+    }
+    const currentDate = selectedDate || fechaCita;
+    setShowDatePicker(Platform.OS === 'ios'); // en android cerrar al seleccionar, en iOS lo mantenemos si se desea
+    setFechaCita(currentDate);
+  }, [fechaCita]);
 
   const handleConfirmarAccion = useCallback(
     async (accionInmediata) => {
@@ -278,6 +319,7 @@ export default function GestionCitasMedico() {
           return;
         }
         if (accionFinal === 'reprogramar') {
+          // construir inicio/fin a partir de fechaCita + horas seleccionadas
           const inicio = new Date(fechaCita);
           const [h, m] = horaInicio.split(':').map(Number);
           inicio.setHours(h, m, 0, 0);
@@ -669,6 +711,17 @@ export default function GestionCitasMedico() {
         onOpenHorarioFin={() => abrirHorario('fin')}
         isSubmitting={isSubmitting}
       />
+
+      {/* DateTimePicker nativo: se renderiza aquí para asegurar que aparezca por encima de los modales */}
+      {showDatePicker && (
+        <DateTimePicker
+          value={fechaCita || new Date()}
+          mode="date"
+          display={Platform.OS === 'ios' ? 'spinner' : 'calendar'}
+          onChange={onChangeFechaPicker}
+          minimumDate={new Date()}
+        />
+      )}
 
       <ModalPacientes
         visible={modalPacienteVisible}

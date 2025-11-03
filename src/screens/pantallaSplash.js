@@ -110,7 +110,7 @@ export default function PantallaSplash() {
         accessible={true}
         accessibilityRole="header"
       >
-        IPSPUPTYAB - SIPSAPS
+        S I P S A PS
       </Animated.Text>
 
       {/* Loader con bloques. */}

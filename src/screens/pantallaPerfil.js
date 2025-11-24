@@ -1,3 +1,4 @@
+// src/screens/pantallaPerfil.js
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   View,
@@ -15,6 +16,7 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSelector, useDispatch } from 'react-redux';
@@ -28,6 +30,10 @@ import { setUser, logout } from '../redux/slices/userSlice';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import api from '../utils/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+// A scaling factor to help adapt layout on very small screens (eg 200x300)
+const SCALE = Math.max(0.5, Math.min(1, Math.min(SCREEN_WIDTH / 360, SCREEN_HEIGHT / 640)));
 
 export default function PantallaPerfil() {
   const insets = useSafeAreaInsets();
@@ -78,13 +84,14 @@ export default function PantallaPerfil() {
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(arrowY, { toValue: 6, duration: 700, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(arrowY, { toValue: 6 * SCALE, duration: 700, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
         Animated.timing(arrowY, { toValue: 0, duration: 700, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
       ])
     );
     loop.start();
     return () => loop.stop();
   }, [arrowY]);
+
   const irASeguridad = useCallback(() => scrollRef.current?.scrollToEnd({ animated: true }), []);
 
   useEffect(() => {
@@ -410,75 +417,85 @@ export default function PantallaPerfil() {
     : 'No disponible';
   const esMedico = user?.rol === 'MEDICO';
 
+  // Responsive styles created with useMemo to avoid recalculation each render
   const estilos = useMemo(
     () =>
       StyleSheet.create({
         contenedor: { flex: 1 },
         scroll: { flex: 1 },
-        content: { padding: espaciados.medio || 20 },
+        content: { padding: Math.max(12, (espaciados.medio || 16) * SCALE) },
         header: {
           alignItems: 'center',
-          marginBottom: espaciados.extraGrande || 30,
+          marginBottom: Math.max(12, (espaciados.extraGrande || 24) * SCALE),
         },
-        fotoContainer: { marginBottom: espaciados.medio || 15 },
+        fotoContainer: { marginBottom: Math.max(8, (espaciados.medio || 12) * SCALE) },
         foto: {
-          width: 80,
-          height: 80,
-          borderRadius: 40,
+          width: Math.max(48, Math.round(80 * SCALE)),
+          height: Math.max(48, Math.round(80 * SCALE)),
+          borderRadius: Math.max(24, Math.round(40 * SCALE)),
           backgroundColor: colores.secundario || '#E5E5E5',
         },
         nombreHeader: {
-          fontSize: fuentes.tamanos?.titulo || 24,
+          fontSize: Math.max(16, (fuentes.tamanos?.titulo || 22) * SCALE),
           textAlign: 'center',
-          marginBottom: espaciados.extraPequenio || 5,
+          marginBottom: Math.max(4, (espaciados.extraPequenio || 6) * SCALE),
         },
         rolHeader: {
-          fontSize: fuentes.tamanos?.medio || 16,
+          fontSize: Math.max(12, (fuentes.tamanos?.medio || 14) * SCALE),
           textAlign: 'center',
+        },
+        botonEditarRow: {
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+          justifyContent: 'center',
+          gap: 8,
+          marginBottom: Math.max(12, (espaciados.extraGrande || 20) * SCALE),
         },
         botonEditar: {
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'center',
           backgroundColor: colores.superficie || '#FFFFFF',
-          borderRadius: 12,
-          padding: espaciados.medio || 15,
-          marginBottom: espaciados.extraGrande || 30,
+          borderRadius: Math.max(8, 12 * SCALE),
+          paddingVertical: Math.max(8, (espaciados.medio || 12) * SCALE),
+          paddingHorizontal: Math.max(12, (espaciados.medio || 16) * SCALE),
           ...(sombras?.pequena || {}),
+          minWidth: 88 * SCALE,
         },
         botonTextoEditar: {
-          fontSize: fuentes.tamanos?.medio || 16,
-          fontWeight: 'bold',
-          marginLeft: espaciados.pequeno || 8,
+          fontSize: Math.max(12, (fuentes.tamanos?.medio || 14) * SCALE),
+          fontWeight: '700',
+          marginLeft: Math.max(6, (espaciados.pequeno || 8) * SCALE),
           color: colores.principal || '#4F46E5',
         },
-        section: { marginBottom: espaciados.extraGrande || 30 },
+        section: { marginBottom: Math.max(12, (espaciados.extraGrande || 20) * SCALE) },
         sectionTitle: {
-          fontSize: fuentes.tamanos?.grande || 18,
-          fontWeight: 'bold',
-          marginBottom: espaciados.medio || 15,
+          fontSize: Math.max(16, (fuentes.tamanos?.grande || 18) * SCALE),
+          fontWeight: '700',
+          marginBottom: Math.max(8, (espaciados.medio || 12) * SCALE),
         },
         field: {
           flexDirection: 'row',
           alignItems: 'center',
           backgroundColor: colores.superficie || '#FFFFFF',
-          borderRadius: 12,
-          padding: espaciados.medio || 15,
-          marginBottom: espaciados.pequeno || 10,
+          borderRadius: Math.max(8, 12 * SCALE),
+          padding: Math.max(8, (espaciados.medio || 12) * SCALE),
+          marginBottom: Math.max(6, (espaciados.pequeno || 8) * SCALE),
           ...(sombras?.pequena || {}),
         },
-        fieldIcon: { marginRight: espaciados.pequeno || 10 },
-        fieldContent: { flex: 1 },
+        fieldIcon: { marginRight: Math.max(8, (espaciados.pequeno || 10) * SCALE) },
+        fieldContent: { flex: 1, minWidth: 0 },
         fieldLabel: {
-          fontSize: fuentes.tamanos?.pequeno || 14,
-          marginBottom: 4,
+          fontSize: Math.max(11, (fuentes.tamanos?.pequeno || 12) * SCALE),
+          marginBottom: Math.max(4, (espaciados.extraPequenio || 4) * SCALE),
+          color: colores.textoSecundario || '#64748B',
         },
-        fieldValue: { fontSize: fuentes.tamanos?.medio || 16, lineHeight: 20 },
-        editButton: { padding: 5 },
+        fieldValue: { fontSize: Math.max(13, (fuentes.tamanos?.medio || 14) * SCALE), lineHeight: Math.round(18 * SCALE), color: colores.textoPrincipal || '#111827' },
+        editButton: { padding: Math.max(4, 6 * SCALE) },
         errorText: {
-          fontSize: fuentes.tamanos?.pequeno || 12,
+          fontSize: Math.max(11, (fuentes.tamanos?.pequeno || 12) * SCALE),
           color: colores.error || '#FF3B30',
-          marginTop: espaciados.extraPequenio || 4,
+          marginTop: Math.max(6, (espaciados.extraPequenio || 6) * SCALE),
         },
         overlay: {
           position: 'absolute',
@@ -490,63 +507,64 @@ export default function PantallaPerfil() {
         },
         overlayBox: {
           backgroundColor: colores.superficie || '#fff',
-          padding: 20,
-          borderRadius: 12,
+          padding: Math.max(12, 16 * SCALE),
+          borderRadius: Math.max(8, 12 * SCALE),
           alignItems: 'center',
           justifyContent: 'center',
         },
         sexOption: {
-          paddingVertical: 12,
-          paddingHorizontal: 18,
-          width: 220,
+          paddingVertical: Math.max(10, 12 * SCALE),
+          paddingHorizontal: Math.max(12, 18 * SCALE),
+          width: Math.min(260, Math.round(220 * SCALE)),
           alignItems: 'center',
         },
-        sexOptionText: { fontSize: 16, fontWeight: '600' },
+        sexOptionText: { fontSize: Math.max(14, 16 * SCALE), fontWeight: '600' },
         seguridadCard: {
           backgroundColor: colores.superficie || '#FFFFFF',
-          borderRadius: 12,
-          padding: espaciados.grande || 16,
+          borderRadius: Math.max(8, 12 * SCALE),
+          padding: Math.max(12, (espaciados.grande || 16) * SCALE),
           ...(sombras?.pequena || {}),
         },
         seguridadTitulo: {
-          fontSize: fuentes.tamanos?.grande || 18,
+          fontSize: Math.max(16, (fuentes.tamanos?.grande || 18) * SCALE),
           fontWeight: '700',
-          marginBottom: 10,
+          marginBottom: Math.max(8, (espaciados.medio || 10) * SCALE),
           color: colores.textoPrincipal || '#111827',
         },
         logoutBtn: {
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'center',
-          paddingVertical: 12,
-          borderRadius: 10,
+          paddingVertical: Math.max(10, 12 * SCALE),
+          borderRadius: Math.max(8, 10 * SCALE),
           backgroundColor: '#EF4444',
         },
         logoutAllBtn: {
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'center',
-          paddingVertical: 12,
-          borderRadius: 10,
+          paddingVertical: Math.max(10, 12 * SCALE),
+          borderRadius: Math.max(8, 10 * SCALE),
           borderWidth: 1,
           borderColor: '#EF4444',
-          marginTop: 10,
+          marginTop: Math.max(8, 10 * SCALE),
           backgroundColor: 'transparent',
         },
         logoutText: {
           color: '#fff',
           fontWeight: '700',
-          marginLeft: 8,
+          marginLeft: Math.max(8, 8 * SCALE),
         },
         logoutAllText: {
           color: '#EF4444',
           fontWeight: '700',
-          marginLeft: 8,
+          marginLeft: Math.max(8, 8 * SCALE),
         },
       }),
     [colores, fuentes, espaciados, sombras]
   );
 
+  // central renderField: keeps original behaviour, but ensures responsiveness and avoids icon collapse
   const renderField = useCallback(
     (label, value, iconName = null, editable = true, inputKey) => {
       const isEditingThis = editable && editingMode;
@@ -561,10 +579,13 @@ export default function PantallaPerfil() {
             })()
           : value;
 
+      // For very narrow screens ensure icons shrink and labels wrap
+      const iconSize = Math.max(14, Math.round(18 * SCALE));
+
       if (inputKey === 'sexo') {
         const display = sexoDisplay(value);
         return (
-          <View key={inputKey} style={{ marginBottom: 6 }}>
+          <View key={inputKey} style={{ marginBottom: Math.max(6, 6 * SCALE) }}>
             <View
               style={[
                 estilos.field,
@@ -582,20 +603,13 @@ export default function PantallaPerfil() {
               {iconName && (
                 <FontAwesome
                   name={iconName}
-                  size={20}
+                  size={iconSize}
                   color={colores.textoSecundario || '#64748B'}
                   style={estilos.fieldIcon}
                 />
               )}
               <View style={estilos.fieldContent}>
-                <Text
-                  style={[
-                    estilos.fieldLabel,
-                    { color: colores.textoSecundario || '#64748B' },
-                  ]}
-                >
-                  {label}
-                </Text>
+                <Text style={estilos.fieldLabel}>{label}</Text>
 
                 {isEditingThis ? (
                   <TouchableOpacity
@@ -604,65 +618,27 @@ export default function PantallaPerfil() {
                     accessibilityLabel={`Seleccionar ${label}`}
                     style={{ paddingVertical: 8 }}
                   >
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                      }}
-                    >
-                      <Text
-                        style={[
-                          estilos.fieldValue,
-                          { color: colores.textoPrincipal || '#1E293B' },
-                        ]}
-                      >
-                        {display || 'Seleccionar'}
-                      </Text>
-                      <FontAwesome
-                        name="caret-down"
-                        size={18}
-                        color={colores.textoSecundario || '#64748B'}
-                      />
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <Text style={estilos.fieldValue}>{display || 'Seleccionar'}</Text>
+                      <FontAwesome name="caret-down" size={iconSize} color={colores.textoSecundario || '#64748B'} />
                     </View>
                   </TouchableOpacity>
                 ) : (
-                  <Text
-                    style={[
-                      estilos.fieldValue,
-                      { color: colores.textoPrincipal || '#1E293B' },
-                    ]}
-                  >
-                    {display || 'No disponible'}
-                  </Text>
+                  <Text style={estilos.fieldValue}>{display || 'No disponible'}</Text>
                 )}
               </View>
 
-              {editable && editingMode && (
-                <FontAwesome
-                  name="edit"
-                  size={16}
-                  color={colores.principal || '#4F46E5'}
-                />
-              )}
-              {!editable && (
-                <FontAwesome
-                  name="lock"
-                  size={16}
-                  color={colores.textoSecundario || '#64748B'}
-                />
-              )}
+              {editable && editingMode && <FontAwesome name="edit" size={Math.max(12, 14 * SCALE)} color={colores.principal || '#4F46E5'} />}
+              {!editable && <FontAwesome name="lock" size={Math.max(12, 14 * SCALE)} color={colores.textoSecundario || '#64748B'} />}
             </View>
 
-            {errorsInput[inputKey] ? (
-              <Text style={estilos.errorText}>{errorsInput[inputKey]}</Text>
-            ) : null}
+            {errorsInput[inputKey] ? <Text style={estilos.errorText}>{errorsInput[inputKey]}</Text> : null}
           </View>
         );
       }
 
       return (
-        <View key={inputKey} style={{ marginBottom: 6 }}>
+        <View key={inputKey} style={{ marginBottom: Math.max(6, 6 * SCALE) }}>
           <View
             style={[
               estilos.field,
@@ -680,20 +656,13 @@ export default function PantallaPerfil() {
             {iconName && (
               <FontAwesome
                 name={iconName}
-                size={20}
+                size={Math.round(18 * SCALE)}
                 color={colores.textoSecundario || '#64748B'}
                 style={estilos.fieldIcon}
               />
             )}
             <View style={estilos.fieldContent}>
-              <Text
-                style={[
-                  estilos.fieldLabel,
-                  { color: colores.textoSecundario || '#64748B' },
-                ]}
-              >
-                {label}
-              </Text>
+              <Text style={estilos.fieldLabel}>{label}</Text>
 
               {editable ? (
                 inputKey === 'fecha_nacimiento' ? (
@@ -701,25 +670,17 @@ export default function PantallaPerfil() {
                     onPress={() => {
                       if (editingMode) setShowDatePicker(true);
                     }}
-                    accessible
-                    accessibilityLabel={`Editar ${label}`}
                   >
                     <TextInput
                       pointerEvents="none"
-                      style={[
-                        estilos.fieldValue,
-                        { color: colores.textoPrincipal || '#1E293B' },
-                      ]}
+                      style={[estilos.fieldValue, { color: colores.textoPrincipal || '#1E293B' }]}
                       value={displayValue || ''}
                       editable={false}
                     />
                   </TouchableOpacity>
                 ) : (
                   <TextInput
-                    style={[
-                      estilos.fieldValue,
-                      { color: colores.textoPrincipal || '#1E293B' },
-                    ]}
+                    style={[estilos.fieldValue, { color: colores.textoPrincipal || '#1E293B' }]}
                     value={value}
                     onChangeText={(text) => {
                       switch (inputKey) {
@@ -741,9 +702,7 @@ export default function PantallaPerfil() {
                     }}
                     editable={editingMode}
                     placeholder="Edita aquí"
-                    placeholderTextColor={
-                      (colores.textoSecundario || '#64748B') + '88'
-                    }
+                    placeholderTextColor={(colores.textoSecundario || '#64748B') + '88'}
                     accessible
                     accessibilityLabel={`Edita ${label}`}
                     keyboardType={
@@ -756,48 +715,21 @@ export default function PantallaPerfil() {
                   />
                 )
               ) : (
-                <Text
-                  style={[
-                    estilos.fieldValue,
-                    { color: colores.textoPrincipal || '#1E293B' },
-                  ]}
-                >
+                <Text style={[estilos.fieldValue, { color: colores.textoPrincipal || '#1E293B' }]} numberOfLines={2} ellipsizeMode="tail">
                   {displayValue || 'No disponible'}
                 </Text>
               )}
             </View>
 
-            {editable && editingMode && (
-              <FontAwesome
-                name="edit"
-                size={16}
-                color={colores.principal || '#4F46E5'}
-              />
-            )}
-            {!editable && (
-              <FontAwesome
-                name="lock"
-                size={16}
-                color={colores.textoSecundario || '#64748B'}
-              />
-            )}
+            {editable && editingMode && <FontAwesome name="edit" size={Math.round(14 * SCALE)} color={colores.principal || '#4F46E5'} />}
+            {!editable && <FontAwesome name="lock" size={Math.round(14 * SCALE)} color={colores.textoSecundario || '#64748B'} />}
           </View>
 
-          {errorsInput[inputKey] ? (
-            <Text style={estilos.errorText}>{errorsInput[inputKey]}</Text>
-          ) : null}
+          {errorsInput[inputKey] ? <Text style={estilos.errorText}>{errorsInput[inputKey]}</Text> : null}
         </View>
       );
     },
-    [
-      colores,
-      estilos,
-      editingMode,
-      errorsInput,
-      isDarkModeLocal,
-      formData,
-      sexoModalVisible,
-    ]
+    [colores, estilos, editingMode, errorsInput, isDarkModeLocal, onChangeName, onChangeApellido, onChangeTelefono, onChangeCedula, onChangeSexo, onChangeCorreo, onChangeGeneral, sexoDisplay]
   );
 
   const handleFotoPress = () =>
@@ -814,12 +746,13 @@ export default function PantallaPerfil() {
       <ScrollView
         ref={scrollRef}
         style={estilos.scroll}
-        contentContainerStyle={[estilos.content, { paddingBottom: 40 }]}
+        contentContainerStyle={[estilos.content, { paddingBottom: Math.max(24, 40 * SCALE) }]}
       >
         <View style={estilos.header}>
           <TouchableOpacity
             onPress={handleFotoPress}
             style={estilos.fotoContainer}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
             <Image
               source={{
@@ -841,6 +774,8 @@ export default function PantallaPerfil() {
                 fontFamily: fuentes.negrita || 'System',
               },
             ]}
+            numberOfLines={2}
+            ellipsizeMode="tail"
           >
             {nombreCompleto}
           </Text>
@@ -859,68 +794,64 @@ export default function PantallaPerfil() {
         <View
           style={{
             backgroundColor: colores.superficie || '#FFFFFF',
-            borderRadius: 12,
-            padding: 12,
+            borderRadius: Math.max(8, 12 * SCALE),
+            padding: Math.max(8, 12 * SCALE),
             borderWidth: 1,
             borderColor: (colores.principal || '#4F46E5') + '22',
-            marginBottom: espaciados.medio || 16,
+            marginBottom: Math.max(10, (espaciados.medio || 16) * SCALE),
             ...(sombras?.pequena || {}),
           }}
         >
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, paddingRight: 8 }}>
-              <FontAwesome name="info-circle" size={16} color={colores.principal || '#4F46E5'} />
-              <Text style={{ marginLeft: 8, color: colores.textoPrincipal || '#111827', fontWeight: '600' }}>
+              <FontAwesome name="info-circle" size={Math.round(14 * SCALE)} color={colores.principal || '#4F46E5'} />
+              <Text style={{ marginLeft: Math.max(8, 8 * SCALE), color: colores.textoPrincipal || '#111827', fontWeight: '600', flex: 1 }}>
                 Desliza hacia abajo para cerrar sesión en Seguridad.
               </Text>
             </View>
-
           </View>
 
-          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 10 }}>
-
-
-
+          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: Math.max(8, 10 * SCALE), flexWrap: 'wrap', gap: 8 }}>
             <TouchableOpacity
               onPress={irASeguridad}
-              style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: colores.principal || '#4F46E5', marginLeft: 8 }}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                paddingVertical: Math.max(8, 8 * SCALE),
+                paddingHorizontal: Math.max(10, 12 * SCALE),
+                borderRadius: Math.max(8, 8 * SCALE),
+                borderWidth: 1,
+                borderColor: colores.principal || '#4F46E5',
+                marginLeft: Math.max(8, 8 * SCALE),
+              }}
               accessibilityRole="button"
               accessibilityLabel="Ir a seguridad"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <FontAwesome name="shield" size={14} color={colores.principal || '#4F46E5'} />
-              <Text style={{ color: colores.principal || '#4F46E5', fontWeight: '700', marginLeft: 6 }}>Ir a seguridad</Text>
+              <FontAwesome name="shield" size={Math.round(14 * SCALE)} color={colores.principal || '#4F46E5'} />
+              <Text style={{ color: colores.principal || '#4F46E5', fontWeight: '700', marginLeft: Math.max(6, 6 * SCALE) }}>Ir a seguridad</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        <View
-          style={{
-            flexDirection: 'row',
-            justifyContent: 'center',
-            marginBottom: espaciados.extraGrande || 30,
-            gap: 10,
-          }}
-        >
+        <View style={estilos.botonEditarRow}>
           {editingMode ? (
             <>
               <TouchableOpacity
                 onPress={() => manejarUpdate()}
                 disabled={isSubmitting}
                 style={{
-                  backgroundColor: isSubmitting
-                    ? '#9aa4e6'
-                    : colores.principal || '#4F46E5',
-                  paddingHorizontal: 18,
-                  paddingVertical: 10,
-                  borderRadius: 10,
+                  backgroundColor: isSubmitting ? '#9aa4e6' : colores.principal || '#4F46E5',
+                  paddingHorizontal: Math.max(12, 14 * SCALE),
+                  paddingVertical: Math.max(8, 10 * SCALE),
+                  borderRadius: Math.max(8, 10 * SCALE),
                 }}
+                hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
               >
                 {isSubmitting ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={{ color: '#fff', fontWeight: '700' }}>
-                    Guardar
-                  </Text>
+                  <Text style={{ color: '#fff', fontWeight: '700' }}>Guardar</Text>
                 )}
               </TouchableOpacity>
 
@@ -931,19 +862,13 @@ export default function PantallaPerfil() {
                   backgroundColor: 'transparent',
                   borderWidth: 1,
                   borderColor: colores.principal || '#4F46E5',
-                  paddingHorizontal: 18,
-                  paddingVertical: 10,
-                  borderRadius: 10,
+                  paddingHorizontal: Math.max(12, 14 * SCALE),
+                  paddingVertical: Math.max(8, 10 * SCALE),
+                  borderRadius: Math.max(8, 10 * SCALE),
                 }}
+                hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
               >
-                <Text
-                  style={{
-                    color: colores.principal || '#4F46E5',
-                    fontWeight: '700',
-                  }}
-                >
-                  Cancelar
-                </Text>
+                <Text style={{ color: colores.principal || '#4F46E5', fontWeight: '700' }}>Cancelar</Text>
               </TouchableOpacity>
             </>
           ) : (
@@ -951,113 +876,39 @@ export default function PantallaPerfil() {
               onPress={() => setEditingMode(true)}
               style={{
                 backgroundColor: colores.superficie || '#ffffff',
-                paddingHorizontal: 18,
-                paddingVertical: 10,
-                borderRadius: 10,
+                paddingHorizontal: Math.max(14, 16 * SCALE),
+                paddingVertical: Math.max(8, 10 * SCALE),
+                borderRadius: Math.max(8, 10 * SCALE),
                 borderWidth: 1,
                 borderColor: colores.principal || '#4F46E5',
               }}
+              hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
             >
-              <Text
-                style={{
-                  color: colores.principal || '#4F46E5',
-                  fontWeight: '700',
-                }}
-              >
-                Editar Perfil
-              </Text>
+              <Text style={{ color: colores.principal || '#4F46E5', fontWeight: '700' }}>Editar Perfil</Text>
             </TouchableOpacity>
           )}
         </View>
 
         <View style={estilos.section}>
-          <Text
-            style={[
-              estilos.sectionTitle,
-              { color: colores.principal || '#4F46E5' },
-            ]}
-          >
-            Información Personal
-          </Text>
+          <Text style={[estilos.sectionTitle, { color: colores.principal || '#4F46E5' }]}>Información Personal</Text>
 
           {renderField('Nombre', formData.nombre, 'user', true, 'nombre')}
           {renderField('Apellido', formData.apellido, 'user', true, 'apellido')}
-          {renderField(
-            'Correo Electrónico',
-            formData.correo,
-            'envelope',
-            true,
-            'correo'
-          )}
-          {renderField(
-            'Teléfono',
-            formData.telefono,
-            'phone',
-            true,
-            'telefono'
-          )}
-          {renderField(
-            'Cédula / Documento',
-            formData.cedula,
-            'id-card',
-            true,
-            'cedula'
-          )}
-          {renderField(
-            'Fecha de Ingreso',
-            fechaIngreso,
-            'calendar-check-o',
-            false,
-            'fechaIngreso'
-          )}
-          {renderField(
-            'Fecha de Nacimiento',
-            formData.fecha_nacimiento,
-            'birthday-cake',
-            true,
-            'fecha_nacimiento'
-          )}
+          {renderField('Correo Electrónico', formData.correo, 'envelope', true, 'correo')}
+          {renderField('Teléfono', formData.telefono, 'phone', true, 'telefono')}
+          {renderField('Cédula / Documento', formData.cedula, 'id-card', true, 'cedula')}
+          {renderField('Fecha de Ingreso', fechaIngreso, 'calendar-check-o', false, 'fechaIngreso')}
+          {renderField('Fecha de Nacimiento', formData.fecha_nacimiento, 'birthday-cake', true, 'fecha_nacimiento')}
           {renderField('Sexo', formData.sexo, 'venus-mars', true, 'sexo')}
-          {renderField(
-            'Tipo de Usuario (Rol)',
-            user?.rol || '',
-            'user-circle',
-            false,
-            'rol'
-          )}
-          {renderField(
-            'Nombre de Usuario',
-            user?.nombre_usuario || '',
-            'user',
-            false,
-            'nombre_usuario'
-          )}
+          {renderField('Tipo de Usuario (Rol)', user?.rol || '', 'user-circle', false, 'rol')}
+          {renderField('Nombre de Usuario', user?.nombre_usuario || '', 'user', false, 'nombre_usuario')}
         </View>
 
         {esMedico && (
           <View style={estilos.section}>
-            <Text
-              style={[
-                estilos.sectionTitle,
-                { color: colores.principal || '#4F46E5' },
-              ]}
-            >
-              Información Médica
-            </Text>
-            {renderField(
-              'Especialidad',
-              user?.especialidad_nombre || '',
-              'stethoscope',
-              false,
-              'especialidad_nombre'
-            )}
-            {renderField(
-              'ID Médico',
-              user?.id_medico || '',
-              'medkit',
-              false,
-              'id_medico'
-            )}
+            <Text style={[estilos.sectionTitle, { color: colores.principal || '#4F46E5' }]}>Información Médica</Text>
+            {renderField('Especialidad', user?.especialidad_nombre || '', 'stethoscope', false, 'especialidad_nombre')}
+            {renderField('ID Médico', user?.id_medico || '', 'medkit', false, 'id_medico')}
           </View>
         )}
 
@@ -1069,8 +920,9 @@ export default function PantallaPerfil() {
             style={estilos.logoutBtn}
             accessibilityRole="button"
             accessibilityLabel="Cerrar sesión"
+            hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
           >
-            <FontAwesome name="sign-out" size={18} color="#fff" />
+            <FontAwesome name="sign-out" size={Math.round(18 * SCALE)} color="#fff" />
             <Text style={estilos.logoutText}>Cerrar sesión</Text>
           </TouchableOpacity>
 
@@ -1079,11 +931,10 @@ export default function PantallaPerfil() {
             style={estilos.logoutAllBtn}
             accessibilityRole="button"
             accessibilityLabel="Cerrar sesión en todos los dispositivos"
+            hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
           >
-            <FontAwesome name="ban" size={18} color="#EF4444" />
-            <Text style={estilos.logoutAllText}>
-              Cerrar sesión en todos los dispositivos
-            </Text>
+            <FontAwesome name="ban" size={Math.round(18 * SCALE)} color="#EF4444" />
+            <Text style={estilos.logoutAllText}>Cerrar sesión en todos los dispositivos</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -1108,25 +959,9 @@ export default function PantallaPerfil() {
         animationType="fade"
         onRequestClose={() => setSexoModalVisible(false)}
       >
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: '#00000066',
-            justifyContent: 'center',
-            alignItems: 'center',
-          }}
-        >
-          <View
-            style={{
-              backgroundColor: colores.superficie || '#fff',
-              borderRadius: 12,
-              padding: 12,
-              alignItems: 'center',
-            }}
-          >
-            <Text style={{ fontWeight: '700', marginBottom: 8 }}>
-              Seleccionar Sexo
-            </Text>
+        <View style={{ flex: 1, backgroundColor: '#00000066', justifyContent: 'center', alignItems: 'center' }}>
+          <View style={{ backgroundColor: colores.superficie || '#fff', borderRadius: 12, padding: 12, alignItems: 'center' }}>
+            <Text style={{ fontWeight: '700', marginBottom: 8 }}>Seleccionar Sexo</Text>
             <Pressable
               style={estilos.sexOption}
               onPress={() => {
@@ -1134,14 +969,7 @@ export default function PantallaPerfil() {
                 setSexoModalVisible(false);
               }}
             >
-              <Text
-                style={[
-                  estilos.sexOptionText,
-                  { color: colores.textoPrincipal || '#1E293B' },
-                ]}
-              >
-                MASCULINO
-              </Text>
+              <Text style={[estilos.sexOptionText, { color: colores.textoPrincipal || '#1E293B' }]}>MASCULINO</Text>
             </Pressable>
             <Pressable
               style={estilos.sexOption}
@@ -1150,22 +978,10 @@ export default function PantallaPerfil() {
                 setSexoModalVisible(false);
               }}
             >
-              <Text
-                style={[
-                  estilos.sexOptionText,
-                  { color: colores.textoPrincipal || '#1E293B' },
-                ]}
-              >
-                FEMENINO
-              </Text>
+              <Text style={[estilos.sexOptionText, { color: colores.textoPrincipal || '#1E293B' }]}>FEMENINO</Text>
             </Pressable>
-            <Pressable
-              style={[estilos.sexOption, { marginTop: 8 }]}
-              onPress={() => setSexoModalVisible(false)}
-            >
-              <Text style={{ color: colores.textoSecundario || '#64748B' }}>
-                Cancelar
-              </Text>
+            <Pressable style={[estilos.sexOption, { marginTop: 8 }]} onPress={() => setSexoModalVisible(false)}>
+              <Text style={{ color: colores.textoSecundario || '#64748B' }}>Cancelar</Text>
             </Pressable>
           </View>
         </View>
@@ -1174,37 +990,15 @@ export default function PantallaPerfil() {
       {isSubmitting && (
         <View style={estilos.overlay} pointerEvents="none">
           <View style={estilos.overlayBox}>
-            <ActivityIndicator
-              size="large"
-              color={colores.principal || '#4F46E5'}
-            />
-            <Text
-              style={{
-                marginTop: 12,
-                color: colores.textoSecundario || '#64748B',
-              }}
-            >
-              Guardando cambios…
-            </Text>
+            <ActivityIndicator size="large" color={colores.principal || '#4F46E5'} />
+            <Text style={{ marginTop: 12, color: colores.textoSecundario || '#64748B' }}>Guardando cambios…</Text>
           </View>
         </View>
       )}
 
-      {estaCargando && (
-        <IndicadorCarga
-          visible
-          texto="Procesando…"
-          tamaño="grande"
-          tipo="bloques"
-        />
-      )}
+      {estaCargando && <IndicadorCarga visible texto="Procesando…" tamaño="grande" tipo="bloques" />}
 
-      <ModalGeneral
-        visible={modalVisible}
-        type={modalType}
-        message={modalMessage}
-        onClose={() => setModalVisible(false)}
-      />
+      <ModalGeneral visible={modalVisible} type={modalType} message={modalMessage} onClose={() => setModalVisible(false)} />
     </LinearGradient>
   );
 }

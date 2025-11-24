@@ -40,3 +40,5 @@ eas login # Loguea con tu cuenta Expo (gratuita).
 
 npx expo install @react-navigation/bottom-tabs react-native-image-picker react-native-image-zoom-viewer
 pm install --location=global eas-cli
+
+npx expo install expo-font

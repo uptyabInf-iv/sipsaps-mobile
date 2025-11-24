@@ -2,7 +2,7 @@
   "expo": {
     "name": "sipsaps-mobile",
     "slug": "sipsaps-mobile",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -32,6 +32,9 @@
       "eas": {
         "projectId": "22fdc66f-60cf-4bf0-a839-1be52ff992cd"
       }
-    }
+    },
+    "plugins": [
+      "expo-font"
+    ]
   }
 }

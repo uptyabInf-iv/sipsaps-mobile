@@ -391,7 +391,7 @@ export default function PantallaDashboard() {
             <StatCard
               color="#06b6d4"
               icon="refresh"
-              title="Citas reprogramadas"
+              title="Reprogramadas"
               value={stats.reprogramadas}
               colores={colores}
             />
@@ -412,7 +412,7 @@ export default function PantallaDashboard() {
             <StatCard
               color="#4f46e5"
               icon="bookmark"
-              title="Completadas"
+              title="Atendidas"
               value={stats.completadas}
               colores={colores}
             />

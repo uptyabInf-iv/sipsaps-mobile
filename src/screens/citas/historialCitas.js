@@ -1,63 +1,43 @@
 // src/screens/citas/historialCitas.js
-// Historial de citas — adaptado para pantallas muy compactas (<=360px).
-// Mejoras:
-// - Breakpoint COMPACT para reducir paddings, tamaños y apilar controles verticalmente.
-// - SegChip acepta prop compact para mostrarse full-width y apilado en pantallas pequeñas.
-// - TarjetaCitaHistorial adapta paddings y fuentes en compact.
-// - Modales (acción/gestión/estado) muestran botones apilados y ocupan todo el ancho en compact.
-// - Se respetan safe-area insets y paddingBottom para evitar solapamiento con bottom bar.
-
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
-  FlatList,
-  SectionList,
   TextInput,
   TouchableOpacity,
+  SectionList,
+  FlatList,
   Modal,
   Pressable,
   ScrollView,
-  Alert,
   ActivityIndicator,
+  RefreshControl,
   KeyboardAvoidingView,
   Platform,
-  RefreshControl,
+  Animated,
   Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { FontAwesome } from '@expo/vector-icons';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTemasPersonalizado } from '../../hooks/useTemasPersonalizado';
 import { useFocusEffect } from '@react-navigation/native';
 import api from '../../utils/api';
+import { FontAwesome } from '@expo/vector-icons';
 
-const ESTATUS_INFO = {
-  Aprobada: { color: '#28a745', icon: 'check-circle' },
-  Pendiente: { color: '#ffc107', icon: 'hourglass-half' },
-  Cancelada: { color: '#dc3545', icon: 'times-circle' },
-  Reprogramada: { color: '#17a2b8', icon: 'calendar' },
-  Atendida: { color: '#6c757d', icon: 'history' },
-};
+// Componentes extraídos
+import TarjetaCitaHistorial from '../../components/citas/usuarios/TarjetaCitaHistorial';
+import { EstadoVacioCitas, BotonRecargarCitas } from '../../components/citas/usuarios/ControlesCitas';
+import { ModalAccionesCita, ModalGestionCita, ModalDetalleCita, ModalFiltroEstatus } from '../../components/citas/usuarios/ModalesCitas';
+import ChipSegmentado from '../../components/citas/usuarios/ChipSegmentado';
+import EstadoEtiqueta, { ESTATUS_INFO } from '../../components/citas/usuarios/EstadoEtiqueta';
+import { styles, chipStyles, COMPACT, ITEM_MARGIN } from '../../components/citas/usuarios/estilosCitas';
+import { formatISOCaracas, stripBracketsAndCurly, humanizeTaggedEntry } from '../../utils/fechas';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const COMPACT = SCREEN_WIDTH <= 360; // breakpoint para phones muy compactos
-
-const StatusTag = ({ estatus }) => {
-  const info = ESTATUS_INFO[estatus] || { color: '#999', icon: 'question' };
-  return (
-    <View style={[styles.statusTag, { backgroundColor: info.color + '20' }]}>
-      <FontAwesome name={info.icon} size={11} color={info.color} />
-      <Text style={[styles.statusTagText, { color: info.color }]}>{estatus}</Text>
-    </View>
-  );
-};
-
-// Helpers de formato (evitan desfases por zona horaria)
+// Helpers de formato (evitan desfases por zona horaria) — los dejo en la pantalla para centralizar lógica
 const fmt12h = (hhmm) => {
   if (!hhmm) return '—';
-  const [H, M] = hhmm.split(':').map((n) => parseInt(n, 10));
+  const parts = hhmm.split(':').map((n) => parseInt(n, 10));
+  if (parts.length < 2) return '—';
+  const [H, M] = parts;
   if (Number.isNaN(H) || Number.isNaN(M)) return '—';
   let h = H % 12;
   if (h === 0) h = 12;
@@ -68,6 +48,7 @@ const fmtFechaLarga = (yyyyMmDd) => {
   if (!yyyyMmDd) return '—';
   try {
     const d = new Date(yyyyMmDd + 'T00:00:00');
+    if (isNaN(d.getTime())) return yyyyMmDd;
     return d.toLocaleDateString('es-ES', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
   } catch {
     return yyyyMmDd;
@@ -78,124 +59,6 @@ const doctorPrefix = (sexo) => {
   if (sexo === 'F') return 'Dra.';
   return 'Dr(a).';
 };
-
-// SegChip ahora soporta compact: ocupa ancho completo y se apila verticalmente en pantallas compactas
-const SegChip = ({ label, active, onPress, color, compact }) => (
-  <TouchableOpacity
-    onPress={onPress}
-    accessibilityRole="button"
-    accessibilityLabel={label}
-    style={[
-      chipStyles.chip,
-      {
-        borderColor: active ? color : '#E5E5E7',
-        backgroundColor: active ? color + '15' : 'transparent',
-      },
-      compact ? chipStyles.chipCompact : null,
-    ]}
-  >
-    <Text style={[chipStyles.chipText, { color: active ? color : '#111827' }]}>{label}</Text>
-  </TouchableOpacity>
-);
-
-const TarjetaCitaHistorial = React.memo(({ item, onPress, compact }) => {
-  const { colores, esOscuro } = useTemasPersonalizado();
-  const infoEstatus = ESTATUS_INFO[item?.estatus] || ESTATUS_INFO.Pendiente;
-
-  const preview = item?.justificacion
-    ? item.justificacion.length > 120
-      ? item.justificacion.slice(0, 117) + '...'
-      : item.justificacion
-    : '';
-
-  const fueraHorario = !!item?.fueraHorario;
-  const horaChip = item?.horaStr ? fmt12h(item.horaStr) : '—';
-  const medDisplay = item?.medico ? `${doctorPrefix(item.med_sexo)} ${item.medico}` : '—';
-
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={`Abrir detalles de la cita con ${medDisplay}`}
-      activeOpacity={0.9}
-      style={[
-        styles.card,
-        compact ? styles.cardCompact : null,
-        { backgroundColor: colores.superficie, shadowColor: esOscuro ? '#000' : '#555' },
-      ]}
-    >
-      <View style={[styles.cardStateBorder, { backgroundColor: infoEstatus.color }]} />
-
-      <View style={[styles.cardBody, compact ? styles.cardBodyCompact : null]}>
-        <View style={styles.cardHeaderRow}>
-          <View style={styles.cardHeaderLeft}>
-            <Text style={[styles.cardTitle, { color: colores.textoPrincipal }]} numberOfLines={1}>
-              {item?.especialidad ?? '—'}
-            </Text>
-            <View style={styles.cardSubRow}>
-              <FontAwesome name="user-md" size={compact ? 12 : 14} color={colores.textoSecundario} />
-              <Text style={[styles.cardSubtitle, { color: colores.textoSecundario }]} numberOfLines={1}>
-                {medDisplay}
-              </Text>
-            </View>
-          </View>
-
-          <View style={[styles.statusPill, { borderColor: infoEstatus.color, backgroundColor: infoEstatus.color + '20' }]}>
-            <FontAwesome name={infoEstatus.icon} size={12} color={infoEstatus.color} />
-            <Text style={[styles.statusPillText, { color: colores.textoPrincipal }]}>{item?.estatus ?? 'Pendiente'}</Text>
-          </View>
-        </View>
-
-        <View style={styles.dateRow}>
-          <View style={styles.dateIconWrap}>
-            <FontAwesome name="calendar-o" size={12} color="#17a2b8" />
-          </View>
-          <View style={{ marginLeft: 10 }}>
-            <Text style={[styles.metaLabel, { color: colores.textoSecundario }]}>Programada</Text>
-            <Text style={[styles.metaValue, { color: colores.textoPrincipal }]}>
-              {fmtFechaLarga(item.fechaStr)} • {horaChip}
-            </Text>
-          </View>
-        </View>
-
-        {fueraHorario ? (
-          <View style={styles.outOfSchedule}>
-            <FontAwesome name="exclamation-triangle" size={12} color="#F59E0B" />
-            <Text style={styles.outOfScheduleText}>Fuera de horario: {horaChip}</Text>
-          </View>
-        ) : null}
-
-        {item?.motivo ? (
-          <View style={{ marginTop: 10 }}>
-            <Text style={[styles.sectionLabel, { color: colores.textoSecundario }]}>Motivo</Text>
-            <Text style={[styles.sectionText, { color: colores.textoPrincipal }]} numberOfLines={compact ? 2 : 3}>
-              {item.motivo}
-            </Text>
-          </View>
-        ) : preview ? (
-          <View style={{ marginTop: 10 }}>
-            <Text style={[styles.sectionLabel, { color: colores.textoSecundario }]}>Nota</Text>
-            <Text style={[styles.sectionText, { color: colores.textoPrincipal }]} numberOfLines={compact ? 2 : 3}>
-              {preview}
-            </Text>
-          </View>
-        ) : null}
-
-        <View style={styles.cardFooter}>
-          <TouchableOpacity
-            onPress={onPress}
-            style={[styles.detailButton, compact ? styles.detailButtonCompact : null, { backgroundColor: colores.principal }]}
-            accessibilityRole="button"
-            accessibilityLabel="Ver detalle de la cita"
-          >
-            <FontAwesome name="eye" size={12} color="#fff" />
-            <Text style={styles.detailButtonText}>Ver detalle</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-});
 
 export default function HistorialCitas() {
   const insets = useSafeAreaInsets();
@@ -228,6 +91,8 @@ export default function HistorialCitas() {
   const [usarHoraActual, setUsarHoraActual] = useState(true);
   const [permitirFueraHorario, setPermitirFueraHorario] = useState(false);
 
+  const searchInputRef = useRef(null);
+
   const parseHoraTo12 = useCallback((hhmm) => {
     if (!hhmm) return { h12: 9, mm: '00', ampm: 'AM' };
     const [H, M] = hhmm.split(':').map((n) => parseInt(n, 10));
@@ -249,13 +114,45 @@ export default function HistorialCitas() {
 
   // Mapea respuesta backend a forma usada por UI
   const mapCitas = useCallback((arr) => {
-    return (arr || []).map((r) => {
+    if (!Array.isArray(arr)) return [];
+    return arr.map((r) => {
+      // Defensive shorthand for fields that can be missing
       const med_sexo = r.med_sexo || r.sexo_medico || null;
       const just = r.justificacion || '';
       const fueraHorario = !!r.fueraHorario || /\[FUERA_HORARIO\]/i.test(just);
 
+      // fecha/hora crudos del backend (validamos formatos simples)
       const fechaStr = r.fecha || (r.fechaSolicitud ? new Date(r.fechaSolicitud).toISOString().slice(0, 10) : null);
-      const horaStr = r.hora || (r.fechaSolicitud ? `${String(new Date(r.fechaSolicitud).getHours()).padStart(2,'0')}:${String(new Date(r.fechaSolicitud).getMinutes()).padStart(2,'0')}` : null);
+
+      // normalize hora: backend may send '18:00:00' or '18:00'
+      let horaRaw = r.hora || null;
+      if (horaRaw && typeof horaRaw === 'string') {
+        // take HH:MM portion
+        const m = horaRaw.match(/^(\d{2}:\d{2})/);
+        horaRaw = m ? m[1] : horaRaw;
+      } else if (!horaRaw && r.fechaSolicitud) {
+        const d = new Date(r.fechaSolicitud);
+        if (!isNaN(d.getTime())) {
+          horaRaw = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        }
+      }
+
+      // NUEVOS campos que el backend ahora puede enviar (humanizados / limpiados)
+      const just_human = r.justificacion_human || null;
+      const comentario_medico_human = r.comentario_medico_human || null;
+      const motivo_cancelacion_human = r.motivo_cancelacion_human || null;
+      const diagnostico_clean = r.diagnostico_clean || r.diagnostico || null;
+      const fechaAtencionISO = r.fechaAtencion || null;
+      const fechaAtencion_human = r.fechaAtencion_human || (fechaAtencionISO ? formatISOCaracas(fechaAtencionISO) : null);
+
+      // detalle / motivo (columna detalles en BD viene como motivo en SELECT)
+      const motivoRaw = (r.motivo ?? r.detalles ?? r.detalle ?? '') || '';
+      // prefer humanized tags if backend provided them for motivo/motivo_cancelacion etc
+      const motivoClean = typeof motivoRaw === 'string' ? stripBracketsAndCurly(motivoRaw) : '';
+
+      // If backend didn't provide humanized strings for tagged fields, create a fallback
+      // e.g., motivo_cancelacion_human might be null — fallback to humanizeTaggedEntry
+      const motivo_cancelacion_human_final = motivo_cancelacion_human || (r.motivo_cancelacion ? humanizeTaggedEntry(r.motivo_cancelacion) : null);
 
       return {
         id: String(r.id_cita ?? r.id ?? Math.random()),
@@ -264,55 +161,78 @@ export default function HistorialCitas() {
         medico: r.medico || `${(r.med_nombre || '')} ${(r.med_apellido || '')}`.trim(),
         med_sexo,
         fechaStr,
-        horaStr,
-        fecha: fechaStr && horaStr ? `${fechaStr}T${horaStr}:00` : null,
-        fechaSolicitud: r.fechaSolicitud || (fechaStr && horaStr ? new Date(`${fechaStr}T${horaStr}:00`).toISOString() : null),
+        horaStr: horaRaw,
+        // fecha ISO composed (useful para sorting or future ops); only if both parts valid
+        fecha: fechaStr && horaRaw ? `${fechaStr}T${horaRaw}:00` : null,
+        fechaSolicitud: r.fechaSolicitud || (fechaStr && horaRaw ? new Date(`${fechaStr}T${horaRaw}:00`).toISOString() : null),
         estatus: r.estatus || 'Pendiente',
         modificadoPor: r.modificadoPor || null,
-        canceladoPor: r.canceladoPor || null,
-        justificacion: just,
-        motivo: r.motivo || '',
-        fechaAtencion: r.fechaAtencion || null,
+        canceladoPor: r.canceladopor || r.canceladoPor || null,
+        justificacion: r.justificacion || '',
+        justificacion_human: just_human,
+        motivo_cancelacion: r.motivo_cancelacion || '',
+        motivo_cancelacion_human: motivo_cancelacion_human_final,
+        comentario_medico: r.comentario_medico || '',
+        comentario_medico_human,
+        diagnostico: r.diagnostico || '',
+        diagnostico_clean,
+        fechaAtencion: fechaAtencionISO || null,
+        fechaAtencion_human,
         fueraHorario,
+        // Añadido: motivo / detalles crudos y saneados para que los modales los muestren
+        motivo: motivoClean,
+        detalles_raw: r.detalles ?? null,
+        // Mantener original payload por si se necesita (no serializar en storage)
+        _raw: r,
       };
     });
   }, []);
 
   const fetchCitas = useCallback(async () => {
+    // Avoid overlapping fetches
+    if (loading) return;
     try {
       setLoading(true);
       const data = await api.get('/citas/mias');
       const arr = Array.isArray(data) ? data : data?.data || [];
       setCitas(mapCitas(arr));
     } catch (e) {
+      // Mejor manejo de errores: log y mostrar vacío para que UI no se rompa
+      console.warn('fetchCitas error', e);
       api.handleError?.(e);
       setCitas([]);
     } finally {
       setLoading(false);
     }
-  }, [mapCitas]);
+  }, [loading, mapCitas]);
 
   const refresh = useCallback(async () => {
+    if (refreshing) return;
     try {
       setRefreshing(true);
       const data = await api.get('/citas/mias');
       const arr = Array.isArray(data) ? data : data?.data || [];
       setCitas(mapCitas(arr));
     } catch (e) {
+      console.warn('refresh citas error', e);
       api.handleError?.(e);
     } finally {
       setRefreshing(false);
     }
-  }, [mapCitas]);
+  }, [refreshing, mapCitas]);
 
-  useFocusEffect(useCallback(() => { fetchCitas(); }, [fetchCitas]));
+  useFocusEffect(useCallback(() => {
+    // On focus, fetch only if list is empty to avoid too many requests.
+    if (!citas.length) fetchCitas();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchCitas]));
 
   // separar activas/atendidas
   const { citasActivas, citasAtendidas } = useMemo(() => {
     const arr = Array.isArray(citas) ? citas : [];
     return {
-      citasActivas: arr.filter((c) => c?.estatus !== 'Atendida'),
-      citasAtendidas: arr.filter((c) => c?.estatus === 'Atendida'),
+      citasActivas: arr.filter((c) => (c?.estatus || '').toLowerCase() !== 'atendida'),
+      citasAtendidas: arr.filter((c) => (c?.estatus || '').toLowerCase() === 'atendida'),
     };
   }, [citas]);
 
@@ -324,30 +244,36 @@ export default function HistorialCitas() {
       base = base.filter(
         (c) =>
           (c?.especialidad ?? '').toLowerCase().includes(q) ||
-          (c?.medico ?? '').toLowerCase().includes(q)
+          (c?.medico ?? '').toLowerCase().includes(q) ||
+          (c?.motivo ?? '').toLowerCase().includes(q)
       );
     }
     if (filtroEstatus !== 'Todos') {
       base = base.filter((c) => c?.estatus === filtroEstatus);
     }
+    // Sort defensivamente: prefer fecha (ISO) if available, fallback to fechaStr/horaStr
     return base.slice().sort((a, b) => {
+      const dateA = a.fecha ? new Date(a.fecha) : (a.fechaSolicitud ? new Date(a.fechaSolicitud) : null);
+      const dateB = b.fecha ? new Date(b.fecha) : (b.fechaSolicitud ? new Date(b.fechaSolicitud) : null);
+      if (dateA && dateB) return dateB - dateA;
+      // Fallback lexicográfico
       const keyA = `${a.fechaStr || ''}T${a.horaStr || '00:00'}`;
       const keyB = `${b.fechaStr || ''}T${b.horaStr || '00:00'}`;
       return new Date(keyB) - new Date(keyA);
     });
   }, [citasActivas, citasAtendidas, activeTab, busqueda, filtroEstatus]);
 
-  const openActionModal = useCallback((cita) => {
+  const abrirModalAccion = useCallback((cita) => {
     setCitaSeleccionada(cita);
     setModalAccionVisible(true);
   }, []);
 
-  const openDetalleModalDirect = useCallback((cita) => {
+  const abrirDetalleDirecto = useCallback((cita) => {
     setCitaSeleccionada(cita);
     setModalDetalleVisible(true);
   }, []);
 
-  const openGestionModal = useCallback((accion) => {
+  const abrirGestionDesdeAccion = useCallback((accion) => {
     setTipoAccion(accion);
     setJustificacion('');
     const base = citaSeleccionada?.fechaStr ? new Date(`${citaSeleccionada.fechaStr}T00:00:00`) : new Date();
@@ -362,7 +288,7 @@ export default function HistorialCitas() {
     setModalGestionVisible(true);
   }, [citaSeleccionada, parseHoraTo12]);
 
-  const openDetalleModal = useCallback(() => {
+  const abrirDetalleDesdeAccion = useCallback(() => {
     setModalAccionVisible(false);
     setModalDetalleVisible(true);
   }, []);
@@ -371,7 +297,8 @@ export default function HistorialCitas() {
     if (tipoAccion !== 'reprogramar' && tipoAccion !== 'cancelar') return;
 
     if (!justificacion.trim()) {
-      Alert.alert('Validación', 'Por favor, provee una justificación.');
+      // validación sencilla
+      alert('Por favor, provee una justificación.');
       return;
     }
     setIsSubmitting(true);
@@ -381,6 +308,7 @@ export default function HistorialCitas() {
         const fecha = `${nuevaFecha.getFullYear()}-${String(nuevaFecha.getMonth() + 1).padStart(2, '0')}-${String(nuevaFecha.getDate()).padStart(2, '0')}`;
         const hora = usarHoraActual ? (citaSeleccionada?.horaStr || '09:00') : to24h(hour12, minute, ampm);
 
+        // Llamada al backend (paciente) — ya existe la ruta /:id/reprogramar
         await api.patch(`/citas/${citaSeleccionada.id_cita}/reprogramar`, {
           fecha,
           hora,
@@ -388,42 +316,21 @@ export default function HistorialCitas() {
           allow_out_of_schedule: permitirFueraHorario,
         });
 
-        setCitas((prev) =>
-          prev.map((c) =>
-            c.id === citaSeleccionada.id
-              ? {
-                  ...c,
-                  estatus: 'Reprogramada',
-                  fechaStr: fecha,
-                  horaStr: hora,
-                  fecha: `${fecha}T${hora}:00`,
-                  fechaSolicitud: new Date(`${fecha}T${hora}:00`).toISOString(),
-                  justificacion: `[REPROGRAMADA] ${c.justificacion || ''}`.trim(),
-                  fueraHorario: permitirFueraHorario || c.fueraHorario || false,
-                  modificadoPor: 'Paciente',
-                }
-              : c
-          )
-        );
+        // solicitar estado actualizado al backend en lugar de mutar localmente para evitar inconsistencias
+        await fetchCitas();
       }
 
       if (tipoAccion === 'cancelar') {
-        setCitas((prev) =>
-          prev.map((c) =>
-            c.id === citaSeleccionada.id
-              ? {
-                  ...c,
-                  estatus: 'Cancelada',
-                  justificacion,
-                  canceladoPor: 'Paciente',
-                  modificadoPor: 'Paciente',
-                }
-              : c
-          )
-        );
+        // Llamada al backend para cancelar como paciente (nueva ruta)
+        await api.patch(`/citas/${citaSeleccionada.id_cita}/cancelar-paciente`, {
+          justificacion,
+        });
+
+        // refrescar desde backend
+        await fetchCitas();
       }
 
-      Alert.alert('Éxito', tipoAccion === 'reprogramar' ? 'Tu cita fue reprogramada.' : 'Tu cita fue cancelada.');
+      alert(tipoAccion === 'reprogramar' ? 'Tu cita fue reprogramada.' : 'Tu cita fue cancelada.');
       setModalGestionVisible(false);
     } catch (e) {
       api.handleError?.(e);
@@ -441,6 +348,7 @@ export default function HistorialCitas() {
     citaSeleccionada,
     permitirFueraHorario,
     to24h,
+    fetchCitas,
   ]);
 
   const onDateChange = (event, selectedDate) => {
@@ -453,39 +361,21 @@ export default function HistorialCitas() {
     setModalEstatusVisible(false);
   };
 
-  const EmptyState = ({ texto, subtitulo }) => (
-    <View style={{ alignItems: 'center', marginTop: 50, paddingHorizontal: 24 }}>
-      <FontAwesome name="calendar-o" size={28} color={colores.textoSecundario} />
-      <Text style={{ textAlign: 'center', marginTop: 12, color: colores.textoSecundario, fontSize: 15, lineHeight: 22 }}>
-        {texto}
-      </Text>
-      {subtitulo ? (
-        <Text style={{ textAlign: 'center', marginTop: 6, color: colores.textoSecundario, fontSize: 13 }}>
-          {subtitulo}
-        </Text>
-      ) : null}
-    </View>
-  );
+  // Helper: limpia búsqueda y enfoca input
+  const clearSearch = useCallback(() => {
+    setBusqueda('');
+    if (searchInputRef.current && searchInputRef.current.focus) {
+      searchInputRef.current.focus();
+    }
+  }, []);
 
-  const RecargarButton = () => (
-    <TouchableOpacity
-      accessibilityRole="button"
-      accessibilityLabel="Recargar citas"
-      accessibilityHint="Vuelve a cargar tu historial de citas"
-      onPress={fetchCitas}
-      style={[styles.reloadButton, { borderColor: colores.principal }]}
-    >
-      <FontAwesome name="refresh" size={16} color={colores.principal} />
-      <Text style={{ marginLeft: 8, color: colores.principal, fontWeight: '700' }}>Recargar</Text>
-    </TouchableOpacity>
-  );
-
+  // Layout: header + controls
   return (
     <View style={[styles.container, { backgroundColor: colores.fondo, paddingTop: insets.top }]}>
       <View style={{ paddingHorizontal: COMPACT ? 12 : 20, paddingTop: 10 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
           <Text style={[styles.headerTitle, { color: colores.textoPrincipal, fontSize: COMPACT ? 20 : 28 }]}>Mi Historial de Citas</Text>
-          <RecargarButton />
+          <BotonRecargarCitas onPress={fetchCitas} />
         </View>
 
         <View style={[styles.tabContainer, COMPACT ? styles.tabContainerCompact : null]}>
@@ -497,28 +387,44 @@ export default function HistorialCitas() {
           </TouchableOpacity>
         </View>
 
-        <View style={[styles.searchWrapper, { backgroundColor: esOscuro ? '#151517' : '#FFFFFF' }]}>
-          <FontAwesome name="search" size={18} color={colores.principal} />
-          <TextInput
-            style={[styles.searchInput, { color: colores.textoPrincipal, fontSize: COMPACT ? 14 : 16 }]}
-            placeholder="Buscar por médico o especialidad..."
-            placeholderTextColor={colores.textoSecundario}
-            value={busqueda}
-            onChangeText={setBusqueda}
-            accessibilityLabel="Buscar citas"
-            accessibilityHint="Filtra por médico o especialidad"
-          />
-        </View>
+        {/* CONTROL BAR */}
+        <View style={styles.controlBar}>
+          {/* Search */}
+          <View style={[styles.searchWrapper, { backgroundColor: esOscuro ? '#151517' : '#FFFFFF' }]}>
+            {/* ICONO 1: search */}
+            <FontAwesome name="search" size={16} color={colores.textoSecundario} />
+            <TextInput
+              ref={searchInputRef}
+              style={[styles.searchInput, { color: colores.textoPrincipal, fontSize: COMPACT ? 14 : 16 }]}
+              placeholder="Buscar por médico, especialidad o motivo..."
+              placeholderTextColor={colores.textoSecundario}
+              value={busqueda}
+              onChangeText={setBusqueda}
+              accessibilityLabel="Buscar citas"
+              accessibilityHint="Filtra por médico, especialidad o motivo"
+              returnKeyType="search"
+              underlineColorAndroid="transparent"
+            />
+            {busqueda ? (
+              <TouchableOpacity onPress={clearSearch} hitSlop={{ top: 8, left: 8, right: 8, bottom: 8 }} accessibilityLabel="Limpiar búsqueda">
+                {/* ICONO 2: times-circle */}
+                <FontAwesome name="times-circle" size={18} color={colores.textoSecundario} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
 
-        <TouchableOpacity
-          onPress={() => setModalEstatusVisible(true)}
-          style={[styles.filterChip, { borderColor: colores.textoSecundario, paddingHorizontal: COMPACT ? 12 : 16 }]}
-          accessibilityRole="button"
-          accessibilityLabel="Filtrar por estado"
-        >
-          <FontAwesome name="filter" size={14} color={colores.textoSecundario} />
-          <Text style={[styles.filterChipText, { color: colores.textoSecundario, fontSize: COMPACT ? 13 : 14 }]}>{filtroEstatus}</Text>
-        </TouchableOpacity>
+          {/* Filter chip */}
+          <TouchableOpacity
+            onPress={() => setModalEstatusVisible(true)}
+            style={[styles.filterChip, { borderColor: colores.textoSecundario, paddingHorizontal: COMPACT ? 12 : 16 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Filtrar por estado"
+          >
+            {/* ICONO 3: filter */}
+            <FontAwesome name="filter" size={14} color={colores.textoSecundario} />
+            <Text style={[styles.filterChipText, { color: colores.textoSecundario, fontSize: COMPACT ? 13 : 14 }]}>{filtroEstatus}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {loading ? (
@@ -536,8 +442,8 @@ export default function HistorialCitas() {
             <TarjetaCitaHistorial
               item={item}
               onPress={() => {
-                if (item?.estatus === 'Atendida' || item?.estatus === 'Cancelada') openDetalleModalDirect(item);
-                else openActionModal(item);
+                if ((item?.estatus || '').toLowerCase() === 'atendida' || (item?.estatus || '').toLowerCase() === 'cancelada') abrirDetalleDirecto(item);
+                else abrirModalAccion(item);
               }}
               compact={COMPACT}
             />
@@ -549,7 +455,7 @@ export default function HistorialCitas() {
           )}
           contentContainerStyle={{ paddingHorizontal: 4, paddingBottom: Math.max(insets.bottom + 80, 120) }}
           ListEmptyComponent={
-            <EmptyState
+            <EstadoVacioCitas
               texto="Aún no tienes citas activas."
               subtitulo="Solicita tu primera cita desde Agendar Cita para comenzar tu historial."
             />
@@ -564,13 +470,13 @@ export default function HistorialCitas() {
           renderItem={({ item }) => (
             <TarjetaCitaHistorial
               item={item}
-              onPress={() => openDetalleModalDirect(item)}
+              onPress={() => abrirDetalleDirecto(item)}
               compact={COMPACT}
             />
           )}
           contentContainerStyle={{ paddingHorizontal: 4, paddingTop: 10, paddingBottom: Math.max(insets.bottom + 80, 120) }}
           ListEmptyComponent={
-            <EmptyState
+            <EstadoVacioCitas
               texto="No has solicitado ninguna cita atendida."
               subtitulo="Cuando completes una consulta, aparecerá aquí."
             />
@@ -579,416 +485,63 @@ export default function HistorialCitas() {
         />
       )}
 
-      {/* MODALES */}
-      <Modal visible={modalAccionVisible} transparent animationType="fade" onRequestClose={() => setModalAccionVisible(false)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setModalAccionVisible(false)}>
-          <Pressable style={[styles.actionModalContainer, { backgroundColor: colores.superficie, flexDirection: COMPACT ? 'column' : 'column' }]}>
-            <TouchableOpacity style={styles.closeButton} onPress={() => setModalAccionVisible(false)}>
-              <FontAwesome name="close" size={24} color={colores.textoSecundario} />
-            </TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: colores.textoPrincipal }]}>Gestionar Cita</Text>
-            <Text style={{ color: colores.textoSecundario, marginBottom: 18, textAlign: 'center' }}>
-              {citaSeleccionada?.especialidad ?? ''} — {citaSeleccionada?.medico ? `${doctorPrefix(citaSeleccionada.med_sexo)} ${citaSeleccionada.medico}` : '—'}
-            </Text>
+      {/* MODALES controlados desde la pantalla — paso de props para que la lógica quede aquí */}
+      <ModalAccionesCita
+        visible={modalAccionVisible}
+        onClose={() => setModalAccionVisible(false)}
+        cita={citaSeleccionada}
+        onVerDetalle={abrirDetalleDesdeAccion}
+        onReprogramar={() => abrirGestionDesdeAccion('reprogramar')}
+        onCancelar={() => {
+          setTipoAccion('cancelar');
+          setJustificacion('');
+          setModalAccionVisible(false);
+          setModalGestionVisible(true);
+        }}
+      />
 
-            {/* Botones apilados (uno debajo del otro) para mejor UX en compact */}
-            <View style={{ width: '100%' }}>
-              <TouchableOpacity style={[styles.actionCard, { borderColor: colores.textoSecundario, flexDirection: 'row', alignItems: 'center' }]} onPress={openDetalleModal}>
-                <FontAwesome name="info-circle" size={20} color={colores.textoSecundario} />
-                <Text style={[styles.actionCardTitle, { color: colores.textoPrincipal, marginLeft: 12 }]}>Ver detalles</Text>
-              </TouchableOpacity>
+      <ModalGestionCita
+        visible={modalGestionVisible}
+        onClose={() => setModalGestionVisible(false)}
+        tipoAccion={tipoAccion}
+        nuevaFecha={nuevaFecha}
+        showDatePicker={showDatePicker}
+        onMostrarPicker={() => setShowDatePicker(true)}
+        onChangeDate={onDateChange}
+        usarHoraActual={usarHoraActual}
+        setUsarHoraActual={setUsarHoraActual}
+        hour12={hour12}
+        setHour12={setHour12}
+        minute={minute}
+        setMinute={setMinute}
+        ampm={ampm}
+        setAmpm={setAmpm}
+        permitirFueraHorario={permitirFueraHorario}
+        setPermitirFueraHorario={setPermitirFueraHorario}
+        justificacion={justificacion}
+        setJustificacion={setJustificacion}
+        onConfirmar={handleConfirmarAccion}
+        isSubmitting={isSubmitting}
+        compact={COMPACT}
+        colores={colores}
+        esOscuro={esOscuro}
+      />
 
-              <TouchableOpacity style={[styles.actionCard, { borderColor: ESTATUS_INFO.Reprogramada.color }]} onPress={() => openGestionModal('reprogramar')}>
-                <FontAwesome name="calendar" size={20} color={ESTATUS_INFO.Reprogramada.color} />
-                <Text style={[styles.actionCardTitle, { color: colores.textoPrincipal, marginLeft: 12 }]}>Reprogramar</Text>
-              </TouchableOpacity>
+      <ModalDetalleCita
+        visible={modalDetalleVisible}
+        onClose={() => setModalDetalleVisible(false)}
+        cita={citaSeleccionada}
+        colores={colores}
+        esOscuro={esOscuro}
+        insets={insets}
+      />
 
-              <TouchableOpacity style={[styles.actionCard, { borderColor: ESTATUS_INFO.Cancelada.color }]} onPress={() => {
-                setTipoAccion('cancelar');
-                setJustificacion('');
-                setModalAccionVisible(false);
-                setModalGestionVisible(true);
-              }}>
-                <FontAwesome name="times-circle" size={20} color={ESTATUS_INFO.Cancelada.color} />
-                <Text style={[styles.actionCardTitle, { color: colores.textoPrincipal, marginLeft: 12 }]}>Cancelar</Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      <Modal visible={modalGestionVisible} transparent animationType="fade" onRequestClose={() => setModalGestionVisible(false)}>
-        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <Pressable style={[styles.gestionModalContainer, { backgroundColor: colores.superficie }]}>
-            <TouchableOpacity style={styles.closeButton} onPress={() => setModalGestionVisible(false)}>
-              <FontAwesome name="close" size={24} color={colores.textoSecundario} />
-            </TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: colores.textoPrincipal }]}>
-              {tipoAccion === 'reprogramar' ? 'Reprogramar Cita' : 'Cancelar Cita'}
-            </Text>
-
-            {tipoAccion === 'reprogramar' && (
-              <>
-                <Text style={[styles.label, { color: colores.textoSecundario, marginBottom: 6 }]}>Nueva Fecha</Text>
-                <TouchableOpacity onPress={() => setShowDatePicker(true)} style={[styles.datePickerButton, { borderColor: colores.principal }]}>
-                  <Text style={{ color: colores.principal, fontSize: 16 }}>
-                    {nuevaFecha.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}
-                  </Text>
-                </TouchableOpacity>
-                {showDatePicker && <DateTimePicker value={nuevaFecha} mode="date" display="calendar" onChange={onDateChange} />}
-
-                <View style={{ marginTop: 10, width: '100%' }}>
-                  <TouchableOpacity
-                    onPress={() => setUsarHoraActual(!usarHoraActual)}
-                    style={{ flexDirection: 'row', alignItems: 'center' }}
-                    accessibilityRole="button"
-                    accessibilityLabel={usarHoraActual ? 'Usar hora actual (activado)' : 'Usar hora actual (desactivado)'}
-                  >
-                    <FontAwesome name={usarHoraActual ? 'toggle-on' : 'toggle-off'} size={28} color={colores.principal} />
-                    <Text style={{ marginLeft: 8, color: colores.textoPrincipal, fontWeight: '700' }}>
-                      {usarHoraActual ? 'Usar la misma hora' : 'Elegir nueva hora'}
-                    </Text>
-                  </TouchableOpacity>
-
-                  {!usarHoraActual && (
-                    <View style={{ marginTop: 10 }}>
-                      <Text style={[styles.label, { color: colores.textoSecundario }]}>Hora</Text>
-                      <View style={[chipStyles.chipsContainer, COMPACT ? chipStyles.chipsContainerColumn : null]}>
-                        {[...Array(12)].map((_, idx) => {
-                          const val = idx + 1;
-                          return (
-                            <SegChip
-                              key={`h-${val}`}
-                              label={String(val)}
-                              active={hour12 === val}
-                              onPress={() => setHour12(val)}
-                              color={colores.principal}
-                              compact={COMPACT}
-                            />
-                          );
-                        })}
-                      </View>
-
-                      <Text style={[styles.label, { color: colores.textoSecundario, marginTop: 6 }]}>Minutos</Text>
-                      <View style={[chipStyles.chipsContainer, COMPACT ? chipStyles.chipsContainerColumn : null]}>
-                        {['00', '15', '30', '45'].map((mm) => (
-                          <SegChip
-                            key={`m-${mm}`}
-                            label={mm}
-                            active={minute === mm}
-                            onPress={() => setMinute(mm)}
-                            color={colores.principal}
-                            compact={COMPACT}
-                          />
-                        ))}
-                      </View>
-
-                      <Text style={[styles.label, { color: colores.textoSecundario, marginTop: 6 }]}>Periodo</Text>
-                      <View style={[chipStyles.chipsContainer, COMPACT ? chipStyles.chipsContainerColumn : null]}>
-                        {['AM', 'PM'].map((p) => (
-                          <SegChip
-                            key={`p-${p}`}
-                            label={p}
-                            active={ampm === p}
-                            onPress={() => setAmpm(p)}
-                            color={colores.principal}
-                            compact={COMPACT}
-                          />
-                        ))}
-                      </View>
-                    </View>
-                  )}
-
-                  <TouchableOpacity
-                    onPress={() => setPermitirFueraHorario(!permitirFueraHorario)}
-                    style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}
-                  >
-                    <FontAwesome name={permitirFueraHorario ? 'check-square' : 'square-o'} size={18} color={'#F59E0B'} />
-                    <Text style={{ marginLeft: 8, color: '#A16207', fontWeight: '700' }}>
-                      Permitir fuera de horario
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
-
-            <Text style={[styles.label, { color: colores.textoSecundario, marginTop: 12 }]}>
-              Justificación {tipoAccion === 'cancelar' ? '(obligatoria)' : '(obligatoria)'}
-            </Text>
-            <TextInput
-              style={[styles.modalInput, { borderColor: '#CCC', color: colores.textoPrincipal, backgroundColor: esOscuro ? '#2C2C2E' : '#F8FAFC' }]}
-              value={justificacion}
-              onChangeText={setJustificacion}
-              multiline
-              placeholder="Explica por qué reprogramas o cancelas..."
-              accessibilityLabel="Escribe la justificación"
-            />
-
-            <TouchableOpacity
-              style={[styles.modalButton, { backgroundColor: isSubmitting ? '#AAA' : colores.principal }]}
-              onPress={handleConfirmarAccion}
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? <ActivityIndicator color="#FFF" /> : <Text style={styles.modalButtonText}>Confirmar</Text>}
-            </TouchableOpacity>
-          </Pressable>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* Detalle modal (igual) */}
-      <Modal visible={modalDetalleVisible} animationType="slide" onRequestClose={() => setModalDetalleVisible(false)}>
-        <ScrollView style={{ flex: 1, backgroundColor: esOscuro ? '#000' : '#F2F2F7' }}>
-          <View style={{ paddingTop: insets.top + 10, paddingHorizontal: COMPACT ? 12 : 20 }}>
-            <TouchableOpacity onPress={() => setModalDetalleVisible(false)} style={styles.detalleCloseButton} accessibilityLabel="Cerrar detalle">
-              <FontAwesome name="close" size={28} color={colores.textoPrincipal} />
-            </TouchableOpacity>
-            <Text style={[styles.detalleHeaderTitle, { color: colores.textoPrincipal, fontSize: COMPACT ? 18 : 22 }]}>Detalle de la Cita</Text>
-          </View>
-
-          {citaSeleccionada ? (
-            <View style={{ padding: COMPACT ? 12 : 20 }}>
-              <View style={styles.detalleSection}>
-                <Text style={[styles.detalleSectionTitle, { color: colores.principal }]}>Cita</Text>
-                <View style={styles.detalleRow}>
-                  <Text style={[styles.detalleLabel, { color: colores.textoSecundario }]}>Especialidad</Text>
-                  <Text style={[styles.detalleValue, { color: colores.textoPrincipal }]}>{citaSeleccionada.especialidad ?? '—'}</Text>
-                </View>
-                <View style={styles.detalleRow}>
-                  <Text style={[styles.detalleLabel, { color: colores.textoSecundario }]}>Médico</Text>
-                  <Text style={[styles.detalleValue, { color: colores.textoPrincipal }]}>
-                    {citaSeleccionada.medico ? `${doctorPrefix(citaSeleccionada.med_sexo)} ${citaSeleccionada.medico}` : '—'}
-                  </Text>
-                </View>
-                <View style={styles.detalleRow}>
-                  <Text style={[styles.detalleLabel, { color: colores.textoSecundario }]}>Fecha</Text>
-                  <Text style={[styles.detalleValue, { color: colores.textoPrincipal }]}>{fmtFechaLarga(citaSeleccionada.fechaStr)}</Text>
-                </View>
-                <View style={styles.detalleRow}>
-                  <Text style={[styles.detalleLabel, { color: colores.textoSecundario }]}>Hora</Text>
-                  <Text style={[styles.detalleValue, { color: colores.textoPrincipal }]}>{fmt12h(citaSeleccionada.horaStr)}</Text>
-                </View>
-                <View style={styles.detalleRow}>
-                  <Text style={[styles.detalleLabel, { color: colores.textoSecundario }]}>Estado</Text>
-                  <StatusTag estatus={citaSeleccionada.estatus ?? 'Pendiente'} />
-                </View>
-                {citaSeleccionada.fueraHorario ? (
-                  <View style={[styles.detalleRow, { borderBottomWidth: 0, paddingVertical: 10 }]}>
-                    <Text style={[styles.detalleLabel, { color: colores.textoSecundario }]}>Observación</Text>
-                    <Text style={[styles.detalleValue, { color: '#A16207', fontWeight: '800' }]}>
-                      Fuera de horario: {fmt12h(citaSeleccionada.horaStr)}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-
-              <View style={styles.detalleSection}>
-                <Text style={[styles.detalleSectionTitle, { color: colores.principal }]}>Justificación</Text>
-                <Text style={{ color: colores.textoSecundario }}>{citaSeleccionada.justificacion || 'Sin justificación'}</Text>
-              </View>
-
-              {citaSeleccionada.fechaAtencion ? (
-                <View style={styles.detalleSection}>
-                  <Text style={[styles.detalleSectionTitle, { color: colores.principal }]}>Registro de Atención</Text>
-                  <Text style={{ color: colores.textoSecundario }}>
-                    Atendida el: {new Date(citaSeleccionada.fechaAtencion).toLocaleString('es-ES', { dateStyle: 'long', timeStyle: 'short', hour12: true })}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-          ) : (
-            <Text style={{ padding: 20, color: colores.textoSecundario }}>Selecciona una cita para ver detalles.</Text>
-          )}
-        </ScrollView>
-      </Modal>
-
-      <Modal visible={modalEstatusVisible} transparent animationType="fade" onRequestClose={() => setModalEstatusVisible(false)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setModalEstatusVisible(false)}>
-          <Pressable style={[styles.actionModalContainer, { backgroundColor: colores.superficie }]}>
-            <Text style={[styles.modalTitle, { color: colores.textoPrincipal }]}>Filtrar por Estado</Text>
-            <View style={{ width: '100%' }}>
-              {['Todos', 'Pendiente', 'Reprogramada', 'Aprobada', 'Cancelada', 'Atendida'].map((estado) => (
-                <TouchableOpacity
-                  key={estado}
-                  style={[styles.actionCard, { borderColor: filtroEstatus === estado ? colores.principal : '#EEE' }]}
-                  onPress={() => setFiltroDesdeModal(estado)}
-                  accessibilityLabel={`Filtrar por ${estado}`}
-                >
-                  <FontAwesome name={ESTATUS_INFO[estado]?.icon || 'list'} size={18} color={ESTATUS_INFO[estado]?.color || colores.textoSecundario} />
-                  <Text style={[styles.actionCardTitle, { color: colores.textoPrincipal, marginLeft: 12 }]}>{estado}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <ModalFiltroEstatus
+        visible={modalEstatusVisible}
+        onClose={() => setModalEstatusVisible(false)}
+        filtroActual={filtroEstatus}
+        onSeleccionar={setFiltroDesdeModal}
+      />
     </View>
   );
-}
-
-const chipStyles = StyleSheet.create({
-  chipsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 8,
-  },
-  chipsContainerColumn: {
-    flexDirection: 'column',
-  },
-  chip: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: 1.25,
-    marginRight: 8,
-    marginBottom: 8,
-    minWidth: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  chipCompact: {
-    width: '100%',
-    alignItems: 'flex-start',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-  },
-  chipText: {
-    fontWeight: '700',
-  },
-});
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  headerTitle: { fontWeight: '800', letterSpacing: 0.5, marginBottom: COMPACT ? 8 : 12 },
-  tabContainer: { flexDirection: 'row', backgroundColor: '#E5E5EA', borderRadius: 12, padding: 4, marginBottom: 14, marginTop: 6 },
-  tabContainerCompact: { flexDirection: 'column', alignItems: 'stretch' },
-  tabButton: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', marginHorizontal: 4 },
-  tabButtonCompact: { width: '100%', alignItems: 'flex-start', paddingHorizontal: 12, marginBottom: 8 },
-  tabText: { fontWeight: '700' },
-
-  searchWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: COMPACT ? 8 : 10,
-    marginBottom: 12,
-    borderWidth: 1.2,
-    borderColor: '#D1D5DB',
-  },
-  searchInput: { flex: 1, height: COMPACT ? 40 : 48, marginLeft: 10 },
-
-  filterChip: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 20, borderWidth: 1.2, marginBottom: 8 },
-  filterChipText: { marginLeft: 8, fontWeight: '700', fontSize: COMPACT ? 13 : 14 },
-
-  statusTag: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
-  statusTagText: { marginLeft: 6, fontSize: 11, fontWeight: '700' },
-
-  /* Card */
-  card: {
-    flexDirection: 'row',
-    borderRadius: 12,
-    marginHorizontal: ITEM_MARGIN(),
-    marginTop: 12,
-    marginBottom: 16,
-    elevation: 2,
-  },
-  cardCompact: {
-    marginHorizontal: ITEM_MARGIN(true),
-  },
-  cardStateBorder: {
-    width: 6,
-    borderTopLeftRadius: 12,
-    borderBottomLeftRadius: 12,
-  },
-  cardBody: {
-    flex: 1,
-    padding: 16,
-  },
-  cardBodyCompact: {
-    padding: 12,
-  },
-  cardHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
-  cardHeaderLeft: { flex: 1, paddingRight: 12 },
-  cardTitle: { fontSize: COMPACT ? 15 : 16, fontWeight: '700' },
-  cardSubRow: { flexDirection: 'row', marginTop: 6, alignItems: 'center' },
-  cardSubtitle: { marginLeft: 8, color: '#6B7280' },
-
-  statusPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  statusPillText: { marginLeft: 6, fontWeight: '700' },
-
-  dateRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
-  dateIconWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#17a2b8',
-    backgroundColor: '#17a2b8' + '20',
-  },
-  metaLabel: { fontSize: 12 },
-  metaValue: { fontWeight: '700' },
-
-  outOfSchedule: {
-    marginTop: 8,
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#F59E0B',
-    backgroundColor: '#F59E0B20',
-  },
-  outOfScheduleText: { marginLeft: 6, color: '#A16207', fontWeight: '700' },
-
-  sectionLabel: { color: '#6B7280', marginBottom: 4, fontSize: COMPACT ? 12 : 13 },
-  sectionText: { fontSize: COMPACT ? 13 : 15, lineHeight: 20 },
-
-  cardFooter: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginTop: 12 },
-  detailButton: { backgroundColor: '#4F46E5', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, flexDirection: 'row', alignItems: 'center' },
-  detailButtonCompact: { paddingVertical: 8, paddingHorizontal: 10 },
-  detailButtonText: { color: '#fff', fontWeight: '700', marginLeft: 6 },
-
-  /* Section header */
-  sectionHeader: { paddingVertical: 8, paddingHorizontal: 16, borderTopWidth: 1, borderTopColor: '#E6E6E9', marginTop: 6 },
-  sectionHeaderText: { fontSize: COMPACT ? 11 : 13, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.8 },
-
-  /* Modals */
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: COMPACT ? 12 : 20 },
-  actionModalContainer: { borderRadius: 12, paddingVertical: COMPACT ? 12 : 18, paddingHorizontal: COMPACT ? 12 : 14, width: '100%', maxWidth: COMPACT ? 360 : 440, alignItems: 'center' },
-  actionCard: { flexDirection: 'row', alignItems: 'center', width: '100%', padding: COMPACT ? 10 : 12, borderRadius: 10, borderWidth: 1.2, marginBottom: 10 },
-  actionCardTitle: { fontSize: COMPACT ? 15 : 16, fontWeight: '700' },
-  closeButton: { position: 'absolute', top: 12, right: 12, padding: 6 },
-  modalTitle: { fontSize: COMPACT ? 16 : 18, fontWeight: '800', marginBottom: 10 },
-
-  gestionModalContainer: { borderRadius: 12, padding: COMPACT ? 12 : 16, width: '100%', maxWidth: COMPACT ? 360 : 440, alignItems: 'center' },
-  datePickerButton: { width: '100%', borderWidth: 1.5, borderRadius: 12, padding: COMPACT ? 10 : 12, alignItems: 'center', marginBottom: 12, backgroundColor: '#F8FAFC' },
-  label: { fontSize: COMPACT ? 13 : 14, fontWeight: '700' },
-  modalInput: { width: '100%', borderWidth: 1.5, borderRadius: 12, padding: 10, minHeight: 80, textAlignVertical: 'top', fontSize: COMPACT ? 13 : 15, marginTop: 6 },
-  modalButton: { width: '100%', padding: COMPACT ? 10 : 12, borderRadius: 12, alignItems: 'center', marginTop: 12 },
-  modalButtonText: { color: '#FFF', fontWeight: '800' },
-
-  detalleHeaderTitle: { fontSize: COMPACT ? 18 : 22, fontWeight: '800', marginTop: 8 },
-  detalleCloseButton: { position: 'absolute', top: 8, right: 10, padding: 8 },
-  detalleSection: { marginBottom: 18 },
-  detalleSectionTitle: { fontSize: COMPACT ? 14 : 16, fontWeight: '800', marginBottom: 10 },
-  detalleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#EEE' },
-  detalleLabel: { fontSize: COMPACT ? 13 : 14, color: '#666' },
-  detalleValue: { fontSize: COMPACT ? 13 : 14, fontWeight: '700', flex: 1, textAlign: 'right', marginLeft: 10 },
-
-  reloadButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1 },
-});
-
-function ITEM_MARGIN(compact = false) {
-  return compact ? 8 : 16;
 }

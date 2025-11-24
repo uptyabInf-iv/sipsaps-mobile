@@ -1,15 +1,8 @@
 // src/components/citas/apartado-medico/GestionCitasMedico.js
-// Correcciones:
-// - Se integra DateTimePicker para permitir al médico elegir fecha al reprogramar.
-// - Manejo cross-platform: en Android mostramos picker temporalmente y lo cerramos al elegir/dismiss,
-//   en iOS permitimos mantenerlo visible (si quiere usar modo spinner).
-// - Conserva selects de hora mediante ModalHorario (lista de horas).
-// - Validaciones previas a enviar reprogramación (fecha pasada, solapamiento).
-// - Normalización, mapeo y UI sin tocar la lógica de backend (endpoints existentes).
-//
-// Nota: requiere @react-native-community/datetimepicker instalado y linkeado si no está.
-// npm install @react-native-community/datetimepicker --save
-// o yarn add @react-native-community/datetimepicker
+// NOTAS: Se respeta la integridad de tu archivo original. Sólo se ajusta:
+// - Al abrir modal de 'atender' el campo de comentario permanecerá vacío (no precargar comentario_medico).
+// - Se prefiere mostrar campos humanizados que el backend ahora envía.
+// - No se alteró la firma de las funciones usadas por frontend/backend.
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
@@ -25,6 +18,7 @@ import {
   StyleSheet,
   Dimensions,
   Platform,
+  Alert,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useIsFocused } from '@react-navigation/native';
@@ -61,7 +55,6 @@ const normalizeKeysLower = (obj) => {
   return out;
 };
 
-// Componer fecha segura (Android/Hermes-safe) desde fecha y hora crudos.
 const composeLocalDateTime = (fecha = '', hora = '') => {
   const fm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(fecha));
   const hm = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(String(hora));
@@ -76,7 +69,6 @@ const composeLocalDateTime = (fecha = '', hora = '') => {
   return isNaN(dt) ? null : dt;
 };
 
-// Extraer fechaAtencion desde justificación si fuese necesario
 const fechaAtencionFromJust = (just = '') => {
   const m = String(just || '').match(/\[FECHA_ATENCION:([^\]]+)\]/i);
   if (m && m[1]) {
@@ -87,7 +79,7 @@ const fechaAtencionFromJust = (just = '') => {
 };
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const COMPACT = SCREEN_WIDTH <= 360; // phones muy compactos
+const COMPACT = SCREEN_WIDTH <= 360;
 
 export default function GestionCitasMedico() {
   const insets = useSafeAreaInsets();
@@ -113,30 +105,27 @@ export default function GestionCitasMedico() {
 
   const [tipoAccion, setTipoAccion] = useState('');
   const [justificacion, setJustificacion] = useState('');
+  const [diagnostico, setDiagnostico] = useState('');
   const [fechaCita, setFechaCita] = useState(new Date());
   const [horaInicio, setHoraInicio] = useState('09:00');
   const [horaFin, setHoraFin] = useState('09:30');
 
-  // showDatePicker controla visibilidad del DateTimePicker nativo
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Mapeo robusto (compose desde fecha/hora crudos; deja también los crudos por si se necesitan)
   const mapServerToFront = useCallback((arr = []) => {
     return (arr || []).map((row) => {
       const r = normalizeKeysLower(row);
       const p = normalizeKeysLower(r.paciente || {});
       const est = toTitle(r.estatus || 'Pendiente');
 
-      // SIEMPRE: componer desde los crudos fecha/hora si existen
       let fechaSolicitud = null;
       if (r.fecha && r.hora) {
         fechaSolicitud = composeLocalDateTime(r.fecha, r.hora);
       } else if (r.fechasolicitud || r.fechaSolicitud) {
-        // fallback: si viene iso de backend
         const raw = r.fechasolicitud || r.fechaSolicitud;
         const d = raw instanceof Date ? raw : new Date(raw);
         if (!isNaN(d)) fechaSolicitud = d;
@@ -161,12 +150,20 @@ export default function GestionCitasMedico() {
           correo: p.correo || null,
         },
         motivo: r.motivo || '',
-        fecha: r.fecha || null, // crudos para redundancia
-        hora: r.hora || null, // crudos para redundancia
+        fecha: r.fecha || null,
+        hora: r.hora || null,
         fechaSolicitud: fechaSolicitud,
         fechaAtencion: fechaAtencion,
         estatus: est,
         justificacion: r.justificacion || '',
+        justificacion_human: r.justificacion_human || '',
+        comentario_medico: r.comentario_medico || '',
+        comentario_medico_human: r.comentario_medico_human || '',
+        motivo_cancelacion: r.motivo_cancelacion || '',
+        motivo_cancelacion_human: r.motivo_cancelacion_human || '',
+        diagnostico: r.diagnostico || '',
+        diagnostico_clean: r.diagnostico_clean || '',
+        fechaAtencion_human: r.fechaatencion_human || r.fechaAtencion_human || '',
         fueReprogramada:
           !!r.fuereprogramada || est.toLowerCase() === 'reprogramada',
         modificadoPor: r.modificadopor || r.ultimamodificacion || null,
@@ -248,21 +245,28 @@ export default function GestionCitasMedico() {
   const abrirModalGestion = useCallback(
     (accion) => {
       setTipoAccion(accion);
-      setJustificacion(
-        citaSeleccionada?.justificacion
-          ? String(citaSeleccionada.justificacion).replace(
-              /\[Horario:.*?\]\s*/,
-              ''
-            )
-          : ''
-      );
-      // presetear fecha y hora según la cita actual
+
+      // Importante: cuando vamos a 'atender', dejamos el campo de comentario en blanco (el médico
+      // quiere escribir un nuevo comentario, no reusar el antiguo). Para las demás acciones
+      // precargamos razonablemente (reprogramar -> justificacion actual, cancelar -> motivo si existe).
+      if (accion === 'atender') {
+        setJustificacion(''); // <-- CAMBIO: no precargar comentario_medico
+        setDiagnostico('');
+      } else if (accion === 'aprobar') {
+        setJustificacion('');
+      } else if (accion === 'reprogramar') {
+        setJustificacion(citaSeleccionada?.justificacion || '');
+      } else if (accion === 'cancelar') {
+        setJustificacion(citaSeleccionada?.motivo_cancelacion || '');
+      } else {
+        setJustificacion('');
+      }
+
+      // presetear fecha y hora según la cita actual (no cambia el comentario)
       setFechaCita(citaSeleccionada?.fechaSolicitud ? new Date(citaSeleccionada.fechaSolicitud) : new Date());
-      // si cita.hora existe en formato HH:MM:SS o HH:MM
       if (citaSeleccionada?.hora) {
         const hhmm = String(citaSeleccionada.hora).slice(0,5);
         setHoraInicio(hhmm);
-        // default duration 30 min
         const [h, m] = hhmm.split(':').map(Number);
         const end = new Date();
         end.setHours(h, m + 30, 0, 0);
@@ -290,21 +294,22 @@ export default function GestionCitasMedico() {
     setModalDetalleVisible(false);
     setModalHorarioVisible({ visible: false, tipo: 'inicio' });
     setShowDatePicker(false);
+    setTipoAccion('');
+    setJustificacion('');
+    setDiagnostico('');
   }, []);
 
   const abrirHorario = useCallback((tipo) => {
     setModalHorarioVisible({ visible: true, tipo });
   }, []);
 
-  // Handler para DateTimePicker (fecha)
   const onChangeFechaPicker = useCallback((event, selectedDate) => {
-    // On Android the event has type 'dismissed' when user cancels
     if (event && event.type === 'dismissed') {
       setShowDatePicker(false);
       return;
     }
     const currentDate = selectedDate || fechaCita;
-    setShowDatePicker(Platform.OS === 'ios'); // en android cerrar al seleccionar, en iOS lo mantenemos si se desea
+    setShowDatePicker(Platform.OS === 'ios');
     setFechaCita(currentDate);
   }, [fechaCita]);
 
@@ -315,11 +320,10 @@ export default function GestionCitasMedico() {
 
       try {
         if (accionFinal === 'cancelar' && !justificacion.trim()) {
-          alert('Justificación obligatoria para cancelar');
+          Alert.alert('Justificación obligatoria para cancelar');
           return;
         }
         if (accionFinal === 'reprogramar') {
-          // construir inicio/fin a partir de fechaCita + horas seleccionadas
           const inicio = new Date(fechaCita);
           const [h, m] = horaInicio.split(':').map(Number);
           inicio.setHours(h, m, 0, 0);
@@ -328,22 +332,41 @@ export default function GestionCitasMedico() {
           fin.setHours(hh, mm, 0, 0);
 
           if (esFechaPasada(inicio)) {
-            alert('No puede reprogramar a una fecha/hora pasada');
+            Alert.alert('No puede reprogramar a una fecha/hora pasada');
             return;
           }
           if (existeSolapamiento(citas, inicio, fin, citaSeleccionada?.id)) {
-            alert('Conflicto: horario ocupado por otra cita');
+            Alert.alert('Conflicto: horario ocupado por otra cita');
+            return;
+          }
+          if (!justificacion || String(justificacion).trim().length < 5) {
+            Alert.alert('Justificación obligatoria para reprogramar (mínimo 5 caracteres).');
+            return;
+          }
+        }
+
+        if (accionFinal === 'aprobar' && (!justificacion || String(justificacion).trim().length < 1)) {
+          Alert.alert('Comentario obligatorio al aprobar (1+ caracteres).');
+          return;
+        }
+
+        if (accionFinal === 'atender') {
+          if (justificacion && String(justificacion).trim().length > 500) {
+            Alert.alert('El comentario no puede exceder 500 caracteres.');
+            return;
+          }
+          if (diagnostico && String(diagnostico).trim().length > 500) {
+            Alert.alert('El diagnóstico no puede exceder 500 caracteres.');
             return;
           }
         }
 
         setIsSubmitting(true);
 
-        if (
-          accionFinal === 'aprobar' ||
-          accionFinal === 'aprobarReprogramacion'
-        ) {
-          await api.patch(`/citas/${citaSeleccionada.id}/aprobar`);
+        if (accionFinal === 'aprobar' || accionFinal === 'aprobarReprogramacion') {
+          await api.patch(`/citas/${citaSeleccionada.id}/aprobar`, {
+            comentario: String(justificacion).trim(),
+          });
         } else if (accionFinal === 'reprogramar') {
           const yyyy = fechaCita.getFullYear();
           const mm = String(fechaCita.getMonth() + 1).padStart(2, '0');
@@ -352,20 +375,24 @@ export default function GestionCitasMedico() {
           await api.patch(`/citas/${citaSeleccionada.id}/reprogramar-medico`, {
             fecha,
             hora: horaInicio,
-            justificacion: justificacion || 'Reprogramación',
+            justificacion: String(justificacion).trim(),
             allow_out_of_schedule: false,
           });
         } else if (accionFinal === 'cancelar') {
           await api.patch(`/citas/${citaSeleccionada.id}/cancelar`, {
-            justificacion: justificacion.trim(),
+            justificacion: String(justificacion).trim(),
           });
         } else if (accionFinal === 'atender') {
-          await api.patch(`/citas/${citaSeleccionada.id}/atender`);
+          const body = {};
+          if (justificacion && String(justificacion).trim().length > 0) body.comentario = String(justificacion).trim();
+          if (diagnostico && String(diagnostico).trim().length > 0) body.diagnostico = String(diagnostico).trim();
+          // Nota: dejamos comentario opcional; backend ahora reemplaza FECHA_APROBACION al marcar atendida.
+          await api.patch(`/citas/${citaSeleccionada.id}/atender`, body);
         }
 
         await fetchCitas();
         cerrarTodosModales();
-        alert('La cita ha sido actualizada');
+        Alert.alert('Éxito', 'La cita ha sido actualizada correctamente.');
       } catch (error) {
         api.handleError(error);
       } finally {
@@ -375,6 +402,7 @@ export default function GestionCitasMedico() {
     [
       tipoAccion,
       justificacion,
+      diagnostico,
       fechaCita,
       horaInicio,
       horaFin,
@@ -684,10 +712,10 @@ export default function GestionCitasMedico() {
         visible={modalAccionVisible}
         cita={citaSeleccionada}
         onClose={cerrarTodosModales}
-        onAprobar={() => handleConfirmarAccion('aprobar')}
+        onAprobar={() => abrirModalGestion('aprobar')}
         onReprogramar={() => abrirModalGestion('reprogramar')}
         onCancelar={() => abrirModalGestion('cancelar')}
-        onMarcarAtendida={() => handleConfirmarAccion('atender')}
+        onMarcarAtendida={() => abrirModalGestion('atender')}
         isSubmitting={isSubmitting}
       />
 
@@ -705,6 +733,8 @@ export default function GestionCitasMedico() {
         setShowDatePicker={setShowDatePicker}
         justificacion={justificacion}
         setJustificacion={setJustificacion}
+        diagnostico={diagnostico}
+        setDiagnostico={setDiagnostico}
         onConfirm={() => handleConfirmarAccion()}
         onClose={cerrarTodosModales}
         onOpenHorarioInicio={() => abrirHorario('inicio')}
@@ -712,7 +742,6 @@ export default function GestionCitasMedico() {
         isSubmitting={isSubmitting}
       />
 
-      {/* DateTimePicker nativo: se renderiza aquí para asegurar que aparezca por encima de los modales */}
       {showDatePicker && (
         <DateTimePicker
           value={fechaCita || new Date()}
@@ -789,7 +818,6 @@ export default function GestionCitasMedico() {
         }
       />
 
-      {/* Overlay de carga global */}
       <Modal visible={loading || isSubmitting} transparent animationType="fade">
         <View style={styles.loadingOverlay}>
           <View style={styles.loadingBox}>

@@ -45,10 +45,10 @@ import { validarLogin } from '../utils/validator';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const COMPACT = SCREEN_WIDTH <= 360; // breakpoint para teléfonos muy compactos
-const H_PADDING = COMPACT ? 14 : 30;
-const LOGO_SIZE = COMPACT ? 56 : 84;
+const H_PADDING = COMPACT ? 10 : 30;
+const LOGO_SIZE = COMPACT ? 48 : 84;
 const ICON_SMALL = COMPACT ? 16 : 20;
-const INPUT_HEIGHT = COMPACT ? 44 : 56;
+const INPUT_HEIGHT = COMPACT ? 40 : 56;
 
 export default function PantallaInicio() {
   const dispatch = useDispatch();
@@ -91,6 +91,9 @@ export default function PantallaInicio() {
   const [modalType, setModalType] = useState('error');
   const [modalMessage, setModalMessage] = useState('');
 
+  // New: control para mostrar/ocultar contraseña
+  const [mostrarPassword, setMostrarPassword] = useState(false);
+
   const opacidadBienvenida = useSharedValue(1);
   const opacidadLogin = useSharedValue(0);
 
@@ -109,6 +112,7 @@ export default function PantallaInicio() {
       }
     };
     cargarPreferencia();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const validarInput = (campo, value) => {
@@ -169,6 +173,7 @@ export default function PantallaInicio() {
   const estiloBienvenida = useAnimatedStyle(() => ({ opacity: opacidadBienvenida.value }));
   const estiloLogin = useAnimatedStyle(() => ({ opacity: opacidadLogin.value }));
 
+  // Styles - kept together for readability and to preserve original variable names
   const styles = StyleSheet.create({
     contenedor: {
       flex: 1,
@@ -187,33 +192,36 @@ export default function PantallaInicio() {
     card: {
       width: '100%',
       backgroundColor: colores.superficie,
-      borderRadius: 20,
-      paddingVertical: COMPACT ? 18 : 26,
-      paddingHorizontal: COMPACT ? 14 : 22,
+      borderRadius: 18,
+      paddingVertical: COMPACT ? 14 : 22,
+      paddingHorizontal: COMPACT ? 12 : 20,
       alignItems: 'center',
       ...(sombras.media || {}),
-      minWidth: 300,
+      // removed minWidth to support very small screens (e.g. 200x300)
+      // allow card to shrink but ensure comfortable padding
+      maxWidth: 760,
     },
 
     logo: {
       width: LOGO_SIZE,
       height: LOGO_SIZE,
-      marginBottom: COMPACT ? 12 : 18,
+      marginBottom: COMPACT ? 10 : 16,
       borderRadius: 12,
     },
     tituloGrande: {
-      fontSize: COMPACT ? 20 : fuentes.tamanos.titulo,
+      fontSize: COMPACT ? 18 : fuentes.tamanos.titulo,
       fontFamily: fuentes.negrita,
       color: colores.textoPrincipal,
-      marginBottom: 8,
-      letterSpacing: 0.6,
+      marginBottom: 6,
+      letterSpacing: 0.4,
+      textAlign: 'center',
     },
     descripcion: {
       fontSize: COMPACT ? 12 : fuentes.tamanos.medio,
       color: colores.textoSecundario,
       textAlign: 'center',
-      marginBottom: COMPACT ? 12 : 18,
-      paddingHorizontal: COMPACT ? 6 : 12,
+      marginBottom: COMPACT ? 10 : 14,
+      paddingHorizontal: COMPACT ? 6 : 10,
     },
 
     // Formulario minimalista
@@ -221,7 +229,7 @@ export default function PantallaInicio() {
       width: '100%',
       marginTop: 4,
     },
-    campo: { marginBottom: COMPACT ? 10 : 14 },
+    campo: { marginBottom: COMPACT ? 8 : 12 },
     inputContenedor: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -231,13 +239,15 @@ export default function PantallaInicio() {
       borderWidth: 1,
       borderColor: colores.principal + '20',
       paddingHorizontal: 12,
+      position: 'relative', // allow absolute icon inside
     },
     iconoInput: { marginRight: 10 },
     input: {
       flex: 1,
-      fontSize: COMPACT ? 14 : fuentes.tamanos.medio,
+      fontSize: COMPACT ? 13 : fuentes.tamanos.medio,
       color: colores.textoPrincipal,
       paddingVertical: 0,
+      paddingRight: 36, // room for toggle button
     },
     label: {
       fontSize: COMPACT ? 12 : 13,
@@ -248,6 +258,16 @@ export default function PantallaInicio() {
       fontSize: COMPACT ? 11 : 12,
       color: colores.error,
       marginTop: 6,
+    },
+
+    // Password show/hide button (small, non-intrusive)
+    togglePasswordBtn: {
+      position: 'absolute',
+      right: 8,
+      height: '100%',
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 6,
     },
 
     // Switch row
@@ -267,7 +287,7 @@ export default function PantallaInicio() {
 
     botonWrapper: {
       width: '100%',
-      marginTop: COMPACT ? 10 : 18,
+      marginTop: COMPACT ? 10 : 16,
     },
 
     // Footer small
@@ -283,7 +303,7 @@ export default function PantallaInicio() {
 
     // Adjustments for very small screens to prevent overflow
     smallScreenSpacer: {
-      height: Math.max(0, (SCREEN_HEIGHT < 640 ? 8 : 18)),
+      height: Math.max(0, (SCREEN_HEIGHT < 520 ? 6 : 18)),
     },
   });
 
@@ -376,13 +396,24 @@ export default function PantallaInicio() {
                         placeholderTextColor={colores.textoSecundario + '70'}
                         value={password}
                         onChangeText={setPassword}
-                        secureTextEntry
+                        secureTextEntry={!mostrarPassword}
                         autoCapitalize="none"
                         returnKeyType="done"
                         onSubmitEditing={manejarLogin}
                         accessibilityLabel="Ingresa tu contraseña"
                         onBlur={onBlurPassword}
                       />
+
+                      {/* Toggle password visibility - small non-obtrusive button */}
+                      <TouchableOpacity
+                        style={styles.togglePasswordBtn}
+                        onPress={() => setMostrarPassword((v) => !v)}
+                        accessibilityRole="button"
+                        accessibilityLabel={mostrarPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <FontAwesome name={mostrarPassword ? 'eye-slash' : 'eye'} size={ICON_SMALL} color={colores.textoSecundario} />
+                      </TouchableOpacity>
                     </View>
                     {errorsInput.password ? <Text style={styles.errorMensaje}>{errorsInput.password}</Text> : null}
                   </View>
